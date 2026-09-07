@@ -14,29 +14,37 @@ type Admin struct {
 }
 
 type Plan struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	DataLimitBytes int64     `json:"data_limit_bytes"`
-	DurationDays   int       `json:"duration_days"`
-	DeviceLimit    int       `json:"device_limit"`
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	DataLimitBytes    int64     `json:"data_limit_bytes"`
+	DurationDays      int       `json:"duration_days"`
+	DeviceLimit       int       `json:"device_limit"`
+	ResetIntervalDays int       `json:"reset_interval_days"`
+	Enabled           bool      `json:"enabled"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type User struct {
-	ID                string    `json:"id"`
-	Username          string    `json:"username"`
-	DisplayName       string    `json:"display_name"`
-	Email             string    `json:"email"`
-	Status            string    `json:"status"`
-	PlanID            string    `json:"plan_id"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	DataLimitBytes    int64     `json:"data_limit_bytes"`
-	TrafficUsedBytes  int64     `json:"traffic_used_bytes"`
-	DeviceLimit       int       `json:"device_limit"`
-	SubscriptionToken string    `json:"subscription_token"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                    string    `json:"id"`
+	Username              string    `json:"username"`
+	DisplayName           string    `json:"display_name"`
+	Email                 string    `json:"email"`
+	Status                string    `json:"status"`
+	PlanID                string    `json:"plan_id"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	DataLimitBytes        int64     `json:"data_limit_bytes"`
+	TrafficUsedBytes      int64     `json:"traffic_used_bytes"`
+	XrayTrafficBytes      int64     `json:"xray_traffic_bytes"`
+	WireGuardTrafficBytes int64     `json:"wireguard_traffic_bytes"`
+	DeviceLimit           int       `json:"device_limit"`
+	ResetIntervalDays     int       `json:"reset_interval_days"`
+	NextTrafficResetAt    time.Time `json:"next_traffic_reset_at"`
+	Online                bool      `json:"online"`
+	OnlineIPs             int       `json:"online_ips"`
+	LastOnlineAt          time.Time `json:"last_online_at"`
+	SubscriptionToken     string    `json:"subscription_token"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type NodeMetrics struct {
@@ -127,6 +135,40 @@ type InboundClient struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+type Outbound struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	NodeID      string    `json:"node_id"`
+	Tag         string    `json:"tag"`
+	Protocol    string    `json:"protocol"`
+	Address     string    `json:"address"`
+	Port        int       `json:"port"`
+	Username    string    `json:"username"`
+	PasswordEnc string    `json:"-"`
+	Enabled     bool      `json:"enabled"`
+	Remark      string    `json:"remark"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type RoutingRule struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	NodeID     string    `json:"node_id"`
+	Priority   int       `json:"priority"`
+	Enabled    bool      `json:"enabled"`
+	InboundIDs []string  `json:"inbound_ids"`
+	UserIDs    []string  `json:"user_ids"`
+	Domains    []string  `json:"domains"`
+	IPs        []string  `json:"ips"`
+	Ports      string    `json:"ports"`
+	Network    string    `json:"network"`
+	Protocols  []string  `json:"protocols"`
+	OutboundID string    `json:"outbound_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 type PortForward struct {
 	ID         string    `json:"id"`
 	NodeID     string    `json:"node_id"`
@@ -153,6 +195,8 @@ type VPNPeer struct {
 	Enabled         bool      `json:"enabled"`
 	RXBytes         int64     `json:"rx_bytes"`
 	TXBytes         int64     `json:"tx_bytes"`
+	RXBaseBytes     int64     `json:"rx_base_bytes"`
+	TXBaseBytes     int64     `json:"tx_base_bytes"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -175,6 +219,8 @@ type State struct {
 	Tunnels        []Tunnel          `json:"tunnels"`
 	Inbounds       []Inbound         `json:"inbounds"`
 	InboundClients []InboundClient   `json:"inbound_clients"`
+	Outbounds      []Outbound        `json:"outbounds"`
+	RoutingRules   []RoutingRule     `json:"routing_rules"`
 	Forwards       []PortForward     `json:"forwards"`
 	VPNPeers       []VPNPeer         `json:"vpn_peers"`
 	Audit          []AuditEntry      `json:"audit"`

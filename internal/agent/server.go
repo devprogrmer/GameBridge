@@ -31,6 +31,7 @@ func New(c Config) (*Server, error) {
 	s := &Server{cfg: c, mux: http.NewServeMux()}
 	s.routes()
 	s.registerXrayRoutes()
+	s.registerPhase3Routes()
 	return s, nil
 }
 func (s *Server) routes() {
