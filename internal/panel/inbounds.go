@@ -158,16 +158,8 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 		}
 		obj := inboundFromCreate(in)
 		if err := s.store.Update(func(st *State) error {
-			if findNode(st, obj.NodeID) == nil {
-				return errors.New("node not found")
-			}
-			for _, x := range st.Inbounds {
-				if x.NodeID == obj.NodeID && x.Port == obj.Port && x.Listen == obj.Listen {
-					return errors.New("listen address/port is already used by another inbound")
-				}
-				if strings.EqualFold(x.Name, obj.Name) {
-					return errors.New("inbound name already exists")
-				}
+			if err := validateInboundTargetSpec(st, "", obj.Name, obj.NodeID, obj.Listen, obj.Port); err != nil {
+				return err
 			}
 			st.Inbounds = append(st.Inbounds, obj)
 			return nil
@@ -364,52 +356,20 @@ func (s *Server) handleInboundItem(w http.ResponseWriter, r *http.Request, rest 
 			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-
-		var nodeID string
-		err := s.store.Update(func(st *State) error {
-			x := findInbound(st, id)
-			if x == nil {
-				return errors.New("inbound not found")
+		if err := updateInboundTransactional(s.store, id, in, s.deployXrayNode); err != nil {
+			if isInboundDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+				return
 			}
-			nodeID = in.NodeID
-			x.Name = in.Name
-			x.Protocol = in.Protocol
-			x.NodeID = in.NodeID
-			x.Listen = in.Listen
-			x.Port = in.Port
-			x.Transport = in.Transport
-			x.TLSMode = in.TLSMode
-			x.Enabled = in.Enabled
-			x.Remark = in.Remark
-			x.Path = in.Path
-			x.Host = in.Host
-			x.ServiceName = in.ServiceName
-			x.ServerName = in.ServerName
-			x.CertFile = in.CertFile
-			x.KeyFile = in.KeyFile
-			x.RealityDest = in.RealityDest
-			x.RealityServerNames = in.RealityServerNames
-			x.RealityShortIDs = in.RealityShortIDs
-			x.RealityFingerprint = in.RealityFingerprint
-			x.ShadowsocksMethod = in.ShadowsocksMethod
-			if x.TLSMode != "reality" {
-				x.RealityPrivateKeyEnc = ""
-				x.RealityPublicKey = ""
+			if err.Error() == "inbound not found" {
+				jsonError(w, http.StatusNotFound, err.Error())
+				return
 			}
-			x.UpdatedAt = time.Now().UTC()
-			return nil
-		})
-		if err != nil {
-			jsonError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		if err := s.deployXrayNode(nodeID); err != nil {
-			jsonError(w, http.StatusBadGateway, err.Error())
+			jsonError(w, http.StatusConflict, err.Error())
 			return
 		}
 		s.audit(r, "update", "inbound:"+id)
 		jsonWrite(w, http.StatusOK, map[string]bool{"ok": true})
-
 	case http.MethodDelete:
 		if requireRole(r, "admin") != nil {
 			jsonError(w, http.StatusForbidden, "forbidden")
