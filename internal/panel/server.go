@@ -294,9 +294,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "inbounds/"):
 		s.handleInboundItem(w, r, strings.TrimPrefix(p, "inbounds/"))
 	case p == "outbounds":
-		s.handleOutbounds(w, r)
+		s.handleOutboundsV2(w, r)
 	case strings.HasPrefix(p, "outbounds/"):
-		s.handleOutboundItem(w, r, strings.TrimPrefix(p, "outbounds/"))
+		s.handleOutboundItemV2(w, r, strings.TrimPrefix(p, "outbounds/"))
 	case p == "routing":
 		s.handleRoutingRules(w, r)
 	case strings.HasPrefix(p, "routing/"):
