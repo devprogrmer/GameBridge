@@ -1,23 +1,17 @@
-name: Build
+name: Release
 
 on:
-  pull_request:
   push:
-    branches: [main, "feature/**"]
     tags: ["v*"]
 
-concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  linux:
-    name: Linux ${{ matrix.arch }}
+  release:
+    name: Publish Release
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +23,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go mod download
-      - name: Build binaries
+      - name: Build release binaries
         env:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
@@ -38,13 +32,11 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           for component in core panel agent; do
-            pkg="./cmd/gamebridge-${component}"
             binary="gamebridge-${component}-linux-${{ matrix.arch }}"
-            go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/${binary}" "${pkg}"
+            go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/${binary}" "./cmd/gamebridge-${component}"
             (cd dist && sha256sum "${binary}" > "${binary}.sha256")
           done
-      - uses: actions/upload-artifact@v4
+      - uses: softprops/action-gh-release@v2
         with:
-          name: gamebridge-linux-${{ matrix.arch }}
-          path: dist/*
-          retention-days: 14
+          files: dist/*
+          generate_release_notes: true

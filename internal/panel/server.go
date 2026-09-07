@@ -6,7 +6,6 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -1285,32 +1284,4 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, 405, "method not allowed")
 	}
-}
-func (s *Server) handleSubscriptionLegacy(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimPrefix(r.URL.Path, "/sub/")
-	var cfgs []string
-	name := "GameBridge"
-	_ = s.store.Read(func(st State) error {
-		for _, u := range st.Users {
-			if u.SubscriptionToken == token && u.Status == "active" {
-				for _, p := range st.VPNPeers {
-					if p.UserID == u.ID && p.Enabled {
-						if c, e := s.crypt.Open(p.ConfigEnc); e == nil {
-							cfgs = append(cfgs, c)
-						}
-					}
-				}
-			}
-		}
-		if st.Settings["site_name"] != "" {
-			name = st.Settings["site_name"]
-		}
-		return nil
-	})
-	if len(cfgs) == 0 {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "# %s subscription\n\n%s\n", name, strings.Join(cfgs, "\n# --- next device ---\n"))
 }

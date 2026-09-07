@@ -245,15 +245,6 @@ func cloneState(st State) State {
 	return out
 }
 
-func findAdmin(st *State, id string) *Admin {
-	for i := range st.Admins {
-		if st.Admins[i].ID == id {
-			return &st.Admins[i]
-		}
-	}
-	return nil
-}
-
 func findUser(st *State, id string) *User {
 	for i := range st.Users {
 		if st.Users[i].ID == id {
