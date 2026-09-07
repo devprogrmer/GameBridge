@@ -4,7 +4,6 @@ package panel
 import (
 	"errors"
 	"net/http"
-	"sort"
 	"time"
 )
 
@@ -48,19 +47,6 @@ func inboundSummary(st *State, id string, now time.Time) (InboundSummary, error)
 		}
 	}
 	return out, nil
-}
-
-func inboundNodeIDsForDeploy(st *State, inboundID string) []string {
-	ids := map[string]struct{}{}
-	if in := findInbound(st, inboundID); in != nil && in.NodeID != "" {
-		ids[in.NodeID] = struct{}{}
-	}
-	out := make([]string, 0, len(ids))
-	for id := range ids {
-		out = append(out, id)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func validateInboundTarget(st *State, inboundID, nodeID, listen string, port int) error {
