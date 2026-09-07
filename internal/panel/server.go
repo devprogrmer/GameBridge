@@ -290,6 +290,10 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleNodes(w, r)
 	case strings.HasPrefix(p, "nodes/"):
 		s.handleNodeItem(w, r, strings.TrimPrefix(p, "nodes/"))
+	case p == "inbounds":
+		s.handleInbounds(w, r)
+	case strings.HasPrefix(p, "inbounds/"):
+		s.handleInboundItem(w, r, strings.TrimPrefix(p, "inbounds/"))
 	case p == "tunnels":
 		s.handleTunnels(w, r)
 	case strings.HasPrefix(p, "tunnels/"):

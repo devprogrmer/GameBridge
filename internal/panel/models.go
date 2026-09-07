@@ -81,6 +81,21 @@ type Tunnel struct {
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
+type Inbound struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Protocol  string    `json:"protocol"`
+	NodeID    string    `json:"node_id"`
+	Listen    string    `json:"listen"`
+	Port      int       `json:"port"`
+	Transport string    `json:"transport"`
+	TLSMode   string    `json:"tls_mode"`
+	Enabled   bool      `json:"enabled"`
+	Status    string    `json:"status"`
+	Remark    string    `json:"remark"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
 type PortForward struct {
 	ID         string    `json:"id"`
 	NodeID     string    `json:"node_id"`
@@ -118,12 +133,13 @@ type AuditEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type State struct {
-	Schema   int               `json:"schema"`
-	Admins   []Admin           `json:"admins"`
-	Plans    []Plan            `json:"plans"`
-	Users    []User            `json:"users"`
-	Nodes    []Node            `json:"nodes"`
-	Tunnels  []Tunnel          `json:"tunnels"`
+	Schema   int     `json:"schema"`
+	Admins   []Admin `json:"admins"`
+	Plans    []Plan  `json:"plans"`
+	Users    []User  `json:"users"`
+	Nodes    []Node  `json:"nodes"`
+	Tunnels  []Tunnel
+	Inbounds []Inbound         `json:"tunnels"`
 	Forwards []PortForward     `json:"forwards"`
 	VPNPeers []VPNPeer         `json:"vpn_peers"`
 	Audit    []AuditEntry      `json:"audit"`

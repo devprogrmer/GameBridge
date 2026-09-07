@@ -99,6 +99,14 @@ func findNode(st *State, id string) *Node {
 	}
 	return nil
 }
+func findInbound(st *State, id string) *Inbound {
+	for i := range st.Inbounds {
+		if st.Inbounds[i].ID == id {
+			return &st.Inbounds[i]
+		}
+	}
+	return nil
+}
 func findTunnel(st *State, id string) *Tunnel {
 	for i := range st.Tunnels {
 		if st.Tunnels[i].ID == id {
