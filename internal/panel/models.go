@@ -22,6 +22,7 @@ type Plan struct {
 	ResetIntervalDays int       `json:"reset_interval_days"`
 	Enabled           bool      `json:"enabled"`
 	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type User struct {
@@ -30,6 +31,7 @@ type User struct {
 	DisplayName           string    `json:"display_name"`
 	Email                 string    `json:"email"`
 	Status                string    `json:"status"`
+	StatusReason          string    `json:"status_reason,omitempty"`
 	PlanID                string    `json:"plan_id"`
 	ExpiresAt             time.Time `json:"expires_at"`
 	DataLimitBytes        int64     `json:"data_limit_bytes"`
@@ -38,6 +40,7 @@ type User struct {
 	WireGuardTrafficBytes int64     `json:"wireguard_traffic_bytes"`
 	DeviceLimit           int       `json:"device_limit"`
 	ResetIntervalDays     int       `json:"reset_interval_days"`
+	LastTrafficResetAt    time.Time `json:"last_traffic_reset_at"`
 	NextTrafficResetAt    time.Time `json:"next_traffic_reset_at"`
 	Online                bool      `json:"online"`
 	OnlineIPs             int       `json:"online_ips"`

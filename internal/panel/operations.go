@@ -516,9 +516,14 @@ func (s *Server) probeNode(id string) {
 func (s *Server) background() {
 	time.Sleep(2 * time.Second)
 	probe := time.NewTicker(15 * time.Second)
+	lifecycle := time.NewTicker(30 * time.Second)
 	sync := time.NewTicker(60 * time.Second)
 	defer probe.Stop()
+	defer lifecycle.Stop()
 	defer sync.Stop()
+
+	s.reconcileSubscriptionsAndDeploy()
+
 	for {
 		select {
 		case <-probe.C:
@@ -534,8 +539,11 @@ func (s *Server) background() {
 			for _, id := range ids {
 				go s.probeNode(id)
 			}
+		case <-lifecycle.C:
+			s.reconcileSubscriptionsAndDeploy()
 		case <-sync.C:
 			s.syncWireGuard()
+			s.reconcileSubscriptionsAndDeploy()
 		}
 	}
 }
