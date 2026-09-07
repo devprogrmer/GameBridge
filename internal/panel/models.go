@@ -55,6 +55,15 @@ type NodeMetrics struct {
 	NetworkTX       uint64  `json:"network_tx"`
 }
 
+const (
+	NodeStatusUnknown     = "unknown"
+	NodeStatusOnline      = "online"
+	NodeStatusDegraded    = "degraded"
+	NodeStatusOffline     = "offline"
+	NodeStatusMaintenance = "maintenance"
+	NodeStatusDisabled    = "disabled"
+)
+
 type Node struct {
 	ID                string      `json:"id"`
 	Name              string      `json:"name"`
@@ -64,10 +73,15 @@ type Node struct {
 	AgentTokenEnc     string      `json:"-"`
 	InternetInterface string      `json:"internet_interface"`
 	Enabled           bool        `json:"enabled"`
+	Maintenance       bool        `json:"maintenance"`
 	Status            string      `json:"status"`
+	FailureCount      int         `json:"failure_count"`
+	LastError         string      `json:"last_error,omitempty"`
+	Tags              []string    `json:"tags,omitempty"`
 	LastSeen          time.Time   `json:"last_seen"`
 	Metrics           NodeMetrics `json:"metrics"`
 	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
 }
 
 type Tunnel struct {

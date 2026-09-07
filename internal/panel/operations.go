@@ -36,6 +36,34 @@ func allowedTransport(t string) bool {
 	}
 	return false
 }
+func nodeStatusAfterProbe(enabled, maintenance bool, failures int) string {
+	if !enabled {
+		return NodeStatusDisabled
+	}
+	if maintenance {
+		return NodeStatusMaintenance
+	}
+	if failures >= 3 {
+		return NodeStatusOffline
+	}
+	if failures > 0 {
+		return NodeStatusDegraded
+	}
+	return NodeStatusOnline
+}
+
+func validateNodeForWork(n Node) error {
+	if !n.Enabled {
+		return fmt.Errorf("node %q is disabled", n.Name)
+	}
+	if n.Maintenance {
+		return fmt.Errorf("node %q is in maintenance", n.Name)
+	}
+	if n.Status != NodeStatusOnline {
+		return fmt.Errorf("node %q is not online (status: %s)", n.Name, n.Status)
+	}
+	return nil
+}
 func (s *Server) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -103,6 +131,15 @@ func (s *Server) createTunnel(in tunnelCreate) (Tunnel, error) {
 	})
 	if e != nil {
 		return Tunnel{}, e
+	}
+	if src.ID == dst.ID {
+		return Tunnel{}, errors.New("source and destination node must be different")
+	}
+	if e := validateNodeForWork(src); e != nil {
+		return Tunnel{}, fmt.Errorf("source node: %w", e)
+	}
+	if e := validateNodeForWork(dst); e != nil {
+		return Tunnel{}, fmt.Errorf("destination node: %w", e)
 	}
 	srcCIDR, dstCIDR, srcIP, dstIP, e := derivePair(in.CIDR)
 	if e != nil {
@@ -438,20 +475,41 @@ func (s *Server) probeNode(id string) {
 	}) != nil {
 		return
 	}
+
+	now := time.Now().UTC()
+	if !n.Enabled || n.Maintenance {
+		_ = s.store.Update(func(st *State) error {
+			if x := findNode(st, id); x != nil {
+				x.Status = nodeStatusAfterProbe(x.Enabled, x.Maintenance, x.FailureCount)
+				x.UpdatedAt = now
+			}
+			return nil
+		})
+		return
+	}
+
 	var resp struct {
 		Metrics NodeMetrics `json:"metrics"`
 	}
-	e := s.agentJSON(n, http.MethodGet, "/v1/status", nil, &resp)
+	err := s.agentJSON(n, http.MethodGet, "/v1/status", nil, &resp)
+
 	_ = s.store.Update(func(st *State) error {
-		if x := findNode(st, id); x != nil {
-			if e != nil {
-				x.Status = "offline"
-			} else {
-				x.Status = "online"
-				x.LastSeen = time.Now().UTC()
-				x.Metrics = resp.Metrics
-			}
+		x := findNode(st, id)
+		if x == nil {
+			return nil
 		}
+		x.UpdatedAt = now
+		if err != nil {
+			x.FailureCount++
+			x.LastError = err.Error()
+			x.Status = nodeStatusAfterProbe(x.Enabled, x.Maintenance, x.FailureCount)
+			return nil
+		}
+		x.Status = NodeStatusOnline
+		x.LastSeen = now
+		x.Metrics = resp.Metrics
+		x.FailureCount = 0
+		x.LastError = ""
 		return nil
 	})
 }
