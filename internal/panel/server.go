@@ -294,6 +294,18 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleInbounds(w, r)
 	case strings.HasPrefix(p, "inbounds/"):
 		s.handleInboundItem(w, r, strings.TrimPrefix(p, "inbounds/"))
+	case p == "outbounds":
+		s.handleOutbounds(w, r)
+	case strings.HasPrefix(p, "outbounds/"):
+		s.handleOutboundItem(w, r, strings.TrimPrefix(p, "outbounds/"))
+	case p == "routing":
+		s.handleRoutingRules(w, r)
+	case strings.HasPrefix(p, "routing/"):
+		s.handleRoutingRuleItem(w, r, strings.TrimPrefix(p, "routing/"))
+	case p == "online-users":
+		s.handleOnlineUsers(w, r)
+	case p == "traffic":
+		s.handleTrafficSummary(w, r)
 	case p == "tunnels":
 		s.handleTunnels(w, r)
 	case strings.HasPrefix(p, "tunnels/"):

@@ -539,7 +539,7 @@ func (s *Server) handleUserWireGuard(w http.ResponseWriter, r *http.Request, use
 		jsonError(w, 405, "method not allowed")
 	}
 }
-func (s *Server) createWGPeer(userID string, in wgCreate) (VPNPeer, string, error) {
+func (s *Server) createWGPeerLegacy(userID string, in wgCreate) (VPNPeer, string, error) {
 	var u User
 	var n Node
 	count := 0
@@ -615,7 +615,7 @@ func (s *Server) deleteRemotePeer(p VPNPeer) error {
 	}
 	return s.agentJSON(n, http.MethodDelete, "/v1/wireguard/peer?interface="+url.QueryEscape(p.Interface)+"&public_key="+url.QueryEscape(p.PublicKey), nil, nil)
 }
-func (s *Server) syncWireGuard() {
+func (s *Server) syncWireGuardLegacy() {
 	var nodes []Node
 	_ = s.store.Read(func(st State) error { nodes = st.Nodes; return nil })
 	type stat struct {

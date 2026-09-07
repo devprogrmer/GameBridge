@@ -281,13 +281,24 @@ func (s *Server) buildXrayConfig(nodeID string) (map[string]any, Node, error) {
 		})
 	}
 
+	outbounds, err := s.buildXrayOutbounds(st, nodeID)
+	if err != nil {
+		return nil, Node{}, err
+	}
+
 	cfg := map[string]any{
 		"log": map[string]any{"loglevel": "warning"},
+		"api": map[string]any{
+			"tag":      "api",
+			"listen":   "127.0.0.1:10085",
+			"services": []string{"StatsService"},
+		},
 		"policy": map[string]any{
 			"levels": map[string]any{
 				"0": map[string]any{
 					"statsUserUplink":   true,
 					"statsUserDownlink": true,
+					"statsUserOnline":   true,
 				},
 			},
 			"system": map[string]any{
@@ -297,12 +308,10 @@ func (s *Server) buildXrayConfig(nodeID string) (map[string]any, Node, error) {
 				"statsOutboundDownlink": true,
 			},
 		},
-		"stats":    map[string]any{},
-		"inbounds": inbounds,
-		"outbounds": []any{
-			map[string]any{"tag": "direct", "protocol": "freedom"},
-			map[string]any{"tag": "blocked", "protocol": "blackhole"},
-		},
+		"stats":     map[string]any{},
+		"inbounds":  inbounds,
+		"outbounds": outbounds,
+		"routing":   buildXrayRouting(st, nodeID),
 	}
 
 	return cfg, *node, nil
