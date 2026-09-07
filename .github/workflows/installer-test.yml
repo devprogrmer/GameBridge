@@ -1,0 +1,40 @@
+name: Installer Checks
+
+on:
+  pull_request:
+    paths:
+      - "**.sh"
+      - "scripts/**"
+      - ".github/workflows/installer-test.yml"
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "**.sh"
+      - "scripts/**"
+      - ".github/workflows/installer-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: Shell / Script Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax
+        run: |
+          bash -n install.sh
+          bash -n install-panel.sh
+          if [ -f uninstall.sh ]; then bash -n uninstall.sh; fi
+      - name: ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck -x install.sh install-panel.sh
+          if [ -f uninstall.sh ]; then shellcheck -x uninstall.sh; fi
+      - name: Python syntax
+        run: |
+          if [ -f scripts/gamebridge.py ]; then python3 -m py_compile scripts/gamebridge.py; fi

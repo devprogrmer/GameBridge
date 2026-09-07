@@ -45,6 +45,7 @@ func tune(s *kcp.UDPSession, c config.Config) {
 	s.SetNoDelay(1, interval, resend, nc)
 	s.SetWindowSize(512, 512)
 	s.SetACKNoDelay(true)
+	//lint:ignore SA1019 kcp-go still exposes SetStreamMode without a replacement API; stream semantics are required here.
 	s.SetStreamMode(true)
 	outerMTU := c.MTU + 80
 	if outerMTU > 1400 {
