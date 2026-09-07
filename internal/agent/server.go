@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 type Config struct{ Listen, Token, TLSCert, TLSKey, Version string }
@@ -31,6 +30,7 @@ func New(c Config) (*Server, error) {
 	}
 	s := &Server{cfg: c, mux: http.NewServeMux()}
 	s.routes()
+	s.registerXrayRoutes()
 	return s, nil
 }
 func (s *Server) routes() {
@@ -126,11 +126,8 @@ func collectMetrics() Metrics {
 		}
 		f.Close()
 	}
-	var st syscall.Statfs_t
-	if syscall.Statfs("/", &st) == nil {
-		m.DiskTotal = st.Blocks * uint64(st.Bsize)
-		m.DiskFree = st.Bavail * uint64(st.Bsize)
-	}
+	m.DiskTotal, m.DiskFree = diskUsage("/")
+
 	if f, e := os.Open("/proc/net/dev"); e == nil {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {

@@ -12,6 +12,7 @@ type Admin struct {
 	Enabled      bool      `json:"enabled"`
 	CreatedAt    time.Time `json:"created_at"`
 }
+
 type Plan struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`
@@ -21,6 +22,7 @@ type Plan struct {
 	Enabled        bool      `json:"enabled"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
 type User struct {
 	ID                string    `json:"id"`
 	Username          string    `json:"username"`
@@ -36,6 +38,7 @@ type User struct {
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
+
 type NodeMetrics struct {
 	Hostname        string  `json:"hostname"`
 	Kernel          string  `json:"kernel"`
@@ -51,6 +54,7 @@ type NodeMetrics struct {
 	NetworkRX       uint64  `json:"network_rx"`
 	NetworkTX       uint64  `json:"network_tx"`
 }
+
 type Node struct {
 	ID                string      `json:"id"`
 	Name              string      `json:"name"`
@@ -65,6 +69,7 @@ type Node struct {
 	Metrics           NodeMetrics `json:"metrics"`
 	CreatedAt         time.Time   `json:"created_at"`
 }
+
 type Tunnel struct {
 	ID                string    `json:"id"`
 	Name              string    `json:"name"`
@@ -81,21 +86,47 @@ type Tunnel struct {
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
+
 type Inbound struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Protocol  string    `json:"protocol"`
-	NodeID    string    `json:"node_id"`
-	Listen    string    `json:"listen"`
-	Port      int       `json:"port"`
-	Transport string    `json:"transport"`
-	TLSMode   string    `json:"tls_mode"`
-	Enabled   bool      `json:"enabled"`
-	Status    string    `json:"status"`
-	Remark    string    `json:"remark"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                           string    `json:"id"`
+	Name                         string    `json:"name"`
+	Protocol                     string    `json:"protocol"`
+	NodeID                       string    `json:"node_id"`
+	Listen                       string    `json:"listen"`
+	Port                         int       `json:"port"`
+	Transport                    string    `json:"transport"`
+	TLSMode                      string    `json:"tls_mode"`
+	Enabled                      bool      `json:"enabled"`
+	Status                       string    `json:"status"`
+	Remark                       string    `json:"remark"`
+	Path                         string    `json:"path"`
+	Host                         string    `json:"host"`
+	ServiceName                  string    `json:"service_name"`
+	ServerName                   string    `json:"server_name"`
+	CertFile                     string    `json:"cert_file"`
+	KeyFile                      string    `json:"key_file"`
+	RealityDest                  string    `json:"reality_dest"`
+	RealityServerNames           []string  `json:"reality_server_names"`
+	RealityPrivateKeyEnc         string    `json:"-"`
+	RealityPublicKey             string    `json:"reality_public_key"`
+	RealityShortIDs              []string  `json:"reality_short_ids"`
+	RealityFingerprint           string    `json:"reality_fingerprint"`
+	ShadowsocksMethod            string    `json:"shadowsocks_method"`
+	ShadowsocksServerPasswordEnc string    `json:"-"`
+	CreatedAt                    time.Time `json:"created_at"`
+	UpdatedAt                    time.Time `json:"updated_at"`
 }
+
+type InboundClient struct {
+	ID            string    `json:"id"`
+	InboundID     string    `json:"inbound_id"`
+	UserID        string    `json:"user_id"`
+	Email         string    `json:"email"`
+	CredentialEnc string    `json:"-"`
+	Enabled       bool      `json:"enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type PortForward struct {
 	ID         string    `json:"id"`
 	NodeID     string    `json:"node_id"`
@@ -106,6 +137,7 @@ type PortForward struct {
 	Enabled    bool      `json:"enabled"`
 	CreatedAt  time.Time `json:"created_at"`
 }
+
 type VPNPeer struct {
 	ID              string    `json:"id"`
 	UserID          string    `json:"user_id"`
@@ -123,6 +155,7 @@ type VPNPeer struct {
 	TXBytes         int64     `json:"tx_bytes"`
 	CreatedAt       time.Time `json:"created_at"`
 }
+
 type AuditEntry struct {
 	ID        string    `json:"id"`
 	AdminID   string    `json:"admin_id"`
@@ -132,16 +165,18 @@ type AuditEntry struct {
 	RemoteIP  string    `json:"remote_ip"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
 type State struct {
-	Schema   int     `json:"schema"`
-	Admins   []Admin `json:"admins"`
-	Plans    []Plan  `json:"plans"`
-	Users    []User  `json:"users"`
-	Nodes    []Node  `json:"nodes"`
-	Tunnels  []Tunnel
-	Inbounds []Inbound         `json:"tunnels"`
-	Forwards []PortForward     `json:"forwards"`
-	VPNPeers []VPNPeer         `json:"vpn_peers"`
-	Audit    []AuditEntry      `json:"audit"`
-	Settings map[string]string `json:"settings"`
+	Schema         int               `json:"schema"`
+	Admins         []Admin           `json:"admins"`
+	Plans          []Plan            `json:"plans"`
+	Users          []User            `json:"users"`
+	Nodes          []Node            `json:"nodes"`
+	Tunnels        []Tunnel          `json:"tunnels"`
+	Inbounds       []Inbound         `json:"inbounds"`
+	InboundClients []InboundClient   `json:"inbound_clients"`
+	Forwards       []PortForward     `json:"forwards"`
+	VPNPeers       []VPNPeer         `json:"vpn_peers"`
+	Audit          []AuditEntry      `json:"audit"`
+	Settings       map[string]string `json:"settings"`
 }

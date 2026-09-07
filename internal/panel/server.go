@@ -686,7 +686,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 405, "method not allowed")
 	}
 }
-func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSubscriptionLegacy(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/sub/")
 	var cfgs []string
 	name := "GameBridge"
