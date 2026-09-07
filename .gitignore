@@ -1,0 +1,8 @@
+/gamebridge-core
+/bin/
+/dist/
+*.log
+*.tmp
+.idea/
+.vscode/
+.DS_Store

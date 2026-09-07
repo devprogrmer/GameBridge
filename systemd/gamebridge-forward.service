@@ -1,0 +1,12 @@
+[Unit]
+Description=GameBridge persistent port-forward rules
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/gamebridge/forward-rules.sh
+
+[Install]
+WantedBy=multi-user.target

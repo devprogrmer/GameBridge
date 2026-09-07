@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="349" viewBox="0 0 920 349">
+<style>
+.bg{fill:#0d1117} .bar{fill:#161b22} .t{fill:#c9d1d9;font:18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.h{fill:#58a6ff;font:bold 18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{fill:#3fb950} .y{fill:#d29922}
+</style>
+<rect class="bg" width="100%" height="100%" rx="14"/>
+<rect class="bar" width="100%" height="52" rx="14"/>
+<circle cx="25" cy="26" r="7" fill="#f85149"/><circle cx="48" cy="26" r="7" fill="#d29922"/><circle cx="71" cy="26" r="7" fill="#3fb950"/>
+<text x="105" y="33" class="h">GameBridge - Main Menu</text>
+<text x="42" y="88" class="t">1) PulseUDP             2) PulseUDP MultiPath</text><text x="42" y="116" class="t">3) SwiftKCP / FEC       4) GameQUIC</text><text x="42" y="144" class="t">5) EchoGame / ICMP      6) GRE</text><text x="42" y="172" class="t">7) GRE6                 8) IPIP</text><text x="42" y="200" class="t">9) SIT / 6in4          10) Geneve</text><text x="42" y="228" class="t">11) VXLAN              12) WireGuard Relay</text><text x="42" y="256" class="t">13) Status             14) Benchmark</text><text x="42" y="284" class="t">15) Optimize server</text>
+</svg>

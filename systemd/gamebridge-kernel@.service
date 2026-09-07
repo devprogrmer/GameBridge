@@ -1,0 +1,13 @@
+[Unit]
+Description=GameBridge kernel tunnel (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/gamebridge/kernel/%i.sh up
+ExecStop=/etc/gamebridge/kernel/%i.sh down
+
+[Install]
+WantedBy=multi-user.target

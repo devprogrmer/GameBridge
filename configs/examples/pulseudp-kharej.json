@@ -1,0 +1,20 @@
+{
+  "name": "game",
+  "role": "server",
+  "transport": "pulseudp",
+  "listen_host": "0.0.0.0",
+  "peer_host": "",
+  "ports": [9000],
+  "interface": "gb0",
+  "local_cidr": "10.20.0.2/30",
+  "peer_ip": "10.20.0.1",
+  "mtu": 1360,
+  "key_hex": "REPLACE_WITH_THE_SAME_64_HEX_KEY_ON_BOTH_SERVERS",
+  "profile": "competitive",
+  "duplicate_small_packets": false,
+  "duplicate_threshold": 512,
+  "nat": true,
+  "internet_interface": "eth0",
+  "keepalive_ms": 1000,
+  "path_timeout_ms": 5000
+}

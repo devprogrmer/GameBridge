@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="293" viewBox="0 0 920 293">
+<style>
+.bg{fill:#0d1117} .bar{fill:#161b22} .t{fill:#c9d1d9;font:18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.h{fill:#58a6ff;font:bold 18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{fill:#3fb950} .y{fill:#d29922}
+</style>
+<rect class="bg" width="100%" height="100%" rx="14"/>
+<rect class="bar" width="100%" height="52" rx="14"/>
+<circle cx="25" cy="26" r="7" fill="#f85149"/><circle cx="48" cy="26" r="7" fill="#d29922"/><circle cx="71" cy="26" r="7" fill="#3fb950"/>
+<text x="105" y="33" class="h">GameBridge - Benchmark example</text>
+<text x="42" y="88" class="t">Testing 10.20.0.2 with 50 packets...</text><text x="42" y="116" class="t">50 packets transmitted, 50 received, 0% packet loss</text><text x="42" y="144" class="t">rtt min/avg/max/mdev = 37.9/38.4/41.1/0.7 ms</text><text x="42" y="172" class="t"></text><text x="42" y="200" class="t">Gaming note:</text><text x="42" y="228" class="t">Low mdev/jitter is usually more important than chasing 1-2 ms of RTT.</text>
+</svg>
