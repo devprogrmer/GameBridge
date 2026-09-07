@@ -1,0 +1,24 @@
+{
+  "name": "GameBridge Web Panel v0.2.0-beta",
+  "base_repo": "devprogrmer/GameBridge",
+  "base_commit_expected": "3da2614",
+  "adds": [
+    "gamebridge-panel web control plane",
+    "gamebridge-agent node agent",
+    "admin auth + RBAC + optional TOTP",
+    "users + plans + subscriptions",
+    "WireGuard provisioning + quota/expiry enforcement",
+    "multi-node tunnel orchestration",
+    "port forwarding",
+    "node monitoring + remote logs + audit",
+    "panel/agent release binaries and checksums"
+  ],
+  "validation": [
+    "gofmt",
+    "go test new panel/agent packages",
+    "bash -n install-panel.sh",
+    "node --check app.js",
+    "YAML parse build workflow"
+  ],
+  "new_go_dependencies": []
+}

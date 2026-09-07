@@ -1,0 +1,18 @@
+[Unit]
+Description=GameBridge Web Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/gamebridge/panel.env
+ExecStart=/usr/local/bin/gamebridge-panel
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ReadWritePaths=/etc/gamebridge /var/lib/gamebridge
+
+[Install]
+WantedBy=multi-user.target
