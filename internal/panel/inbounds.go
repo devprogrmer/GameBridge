@@ -197,6 +197,14 @@ func (s *Server) handleInboundItem(w http.ResponseWriter, r *http.Request, rest 
 	}
 	id := parts[0]
 
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "enable", "disable", "redeploy", "summary":
+			s.handleInboundControl(w, r, id, parts[1])
+			return
+		}
+	}
+
 	if len(parts) == 2 && parts[1] == "deploy" && r.Method == http.MethodPost {
 		if requireRole(r, "operator") != nil {
 			jsonError(w, http.StatusForbidden, "forbidden")
