@@ -290,6 +290,10 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleNodes(w, r)
 	case strings.HasPrefix(p, "nodes/"):
 		s.handleNodeItem(w, r, strings.TrimPrefix(p, "nodes/"))
+	case p == "inbounds":
+		s.handleInbounds(w, r)
+	case strings.HasPrefix(p, "inbounds/"):
+		s.handleInboundItem(w, r, strings.TrimPrefix(p, "inbounds/"))
 	case p == "tunnels":
 		s.handleTunnels(w, r)
 	case strings.HasPrefix(p, "tunnels/"):
@@ -682,7 +686,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 405, "method not allowed")
 	}
 }
-func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSubscriptionLegacy(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/sub/")
 	var cfgs []string
 	name := "GameBridge"
