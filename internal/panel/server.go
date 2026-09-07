@@ -555,7 +555,20 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 500, e.Error())
 			return
 		}
-		n := Node{ID: randomHex(12), Name: in.Name, Role: in.Role, PublicIP: in.PublicIP, AgentURL: strings.TrimRight(in.AgentURL, "/"), AgentTokenEnc: enc, InternetInterface: defaultString(in.InternetInterface, "eth0"), Enabled: true, Status: "unknown", CreatedAt: time.Now().UTC()}
+		now := time.Now().UTC()
+		n := Node{
+			ID:                randomHex(12),
+			Name:              strings.TrimSpace(in.Name),
+			Role:              strings.TrimSpace(in.Role),
+			PublicIP:          strings.TrimSpace(in.PublicIP),
+			AgentURL:          strings.TrimRight(strings.TrimSpace(in.AgentURL), "/"),
+			AgentTokenEnc:     enc,
+			InternetInterface: defaultString(strings.TrimSpace(in.InternetInterface), "eth0"),
+			Enabled:           true,
+			Status:            NodeStatusUnknown,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		}
 		_ = s.store.Update(func(st *State) error { st.Nodes = append(st.Nodes, n); return nil })
 		go s.probeNode(n.ID)
 		s.audit(r, "create", "node:"+n.Name)
@@ -566,26 +579,310 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleNodeItem(w http.ResponseWriter, r *http.Request, rest string) {
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
-	id := parts[0]
-	if len(parts) == 2 && parts[1] == "probe" && r.Method == http.MethodPost {
-		go s.probeNode(id)
-		jsonWrite(w, 200, map[string]bool{"ok": true})
+	if len(parts) == 0 || parts[0] == "" {
+		jsonError(w, 404, "node not found")
 		return
 	}
-	if r.Method == http.MethodDelete {
+	id := parts[0]
+
+	loadNode := func() (*Node, error) {
+		var node *Node
+		err := s.store.Read(func(st State) error {
+			x := findNode(&st, id)
+			if x == nil {
+				return errors.New("node not found")
+			}
+			c := *x
+			node = &c
+			return nil
+		})
+		return node, err
+	}
+
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			node, err := loadNode()
+			if err != nil {
+				jsonError(w, 404, err.Error())
+				return
+			}
+			var tunnels []Tunnel
+			_ = s.store.Read(func(st State) error {
+				for _, t := range st.Tunnels {
+					if t.SourceNodeID == id || t.DestinationNodeID == id {
+						tunnels = append(tunnels, t)
+					}
+				}
+				return nil
+			})
+			jsonWrite(w, 200, map[string]any{"node": node, "tunnels": tunnels})
+			return
+
+		case http.MethodPut:
+			if requireRole(r, "admin") != nil {
+				jsonError(w, 403, "forbidden")
+				return
+			}
+			var in struct {
+				Name              string   `json:"name"`
+				Role              string   `json:"role"`
+				PublicIP          string   `json:"public_ip"`
+				AgentURL          string   `json:"agent_url"`
+				AgentToken        string   `json:"agent_token"`
+				InternetInterface string   `json:"internet_interface"`
+				Tags              []string `json:"tags"`
+			}
+			if err := decodeJSON(r, &in); err != nil {
+				jsonError(w, 400, err.Error())
+				return
+			}
+			if in.AgentURL != "" &&
+				!strings.HasPrefix(in.AgentURL, "http://") &&
+				!strings.HasPrefix(in.AgentURL, "https://") {
+				jsonError(w, 400, "agent URL must start with http:// or https://")
+				return
+			}
+
+			var tokenEnc string
+			if strings.TrimSpace(in.AgentToken) != "" {
+				enc, err := s.crypt.Seal(in.AgentToken)
+				if err != nil {
+					jsonError(w, 500, err.Error())
+					return
+				}
+				tokenEnc = enc
+			}
+
+			err := s.store.Update(func(st *State) error {
+				n := findNode(st, id)
+				if n == nil {
+					return errors.New("node not found")
+				}
+				if strings.TrimSpace(in.Name) != "" {
+					n.Name = strings.TrimSpace(in.Name)
+				}
+				if strings.TrimSpace(in.Role) != "" {
+					n.Role = strings.TrimSpace(in.Role)
+				}
+				if strings.TrimSpace(in.PublicIP) != "" {
+					n.PublicIP = strings.TrimSpace(in.PublicIP)
+				}
+				if strings.TrimSpace(in.AgentURL) != "" {
+					n.AgentURL = strings.TrimRight(strings.TrimSpace(in.AgentURL), "/")
+				}
+				if strings.TrimSpace(in.InternetInterface) != "" {
+					n.InternetInterface = strings.TrimSpace(in.InternetInterface)
+				}
+				if tokenEnc != "" {
+					n.AgentTokenEnc = tokenEnc
+				}
+				if in.Tags != nil {
+					n.Tags = append([]string(nil), in.Tags...)
+				}
+				n.UpdatedAt = time.Now().UTC()
+				return nil
+			})
+			if err != nil {
+				jsonError(w, 404, err.Error())
+				return
+			}
+			s.audit(r, "update", "node:"+id)
+			go s.probeNode(id)
+			node, _ := loadNode()
+			jsonWrite(w, 200, node)
+			return
+
+		case http.MethodDelete:
+			if requireRole(r, "admin") != nil {
+				jsonError(w, 403, "forbidden")
+				return
+			}
+			err := s.store.Update(func(st *State) error {
+				if findNode(st, id) == nil {
+					return errors.New("node not found")
+				}
+				for _, t := range st.Tunnels {
+					if t.SourceNodeID == id || t.DestinationNodeID == id {
+						return errors.New("node has attached tunnels")
+					}
+				}
+				st.Nodes = deleteByID(st.Nodes, id, func(x Node) string { return x.ID })
+				return nil
+			})
+			if err != nil {
+				if err.Error() == "node not found" {
+					jsonError(w, 404, err.Error())
+				} else {
+					jsonError(w, 409, err.Error())
+				}
+				return
+			}
+			s.audit(r, "delete", "node:"+id)
+			jsonWrite(w, 200, map[string]bool{"ok": true})
+			return
+
+		default:
+			jsonError(w, 405, "method not allowed")
+			return
+		}
+	}
+
+	if len(parts) != 2 {
+		jsonError(w, 404, "not found")
+		return
+	}
+	action := parts[1]
+
+	switch action {
+	case "probe", "sync":
+		if r.Method != http.MethodPost {
+			jsonError(w, 405, "method not allowed")
+			return
+		}
+		if requireRole(r, "operator") != nil {
+			jsonError(w, 403, "forbidden")
+			return
+		}
+		if _, err := loadNode(); err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		s.probeNode(id)
+		if action == "sync" {
+			s.audit(r, "sync", "node:"+id)
+		}
+		node, _ := loadNode()
+		jsonWrite(w, 200, node)
+		return
+
+	case "enable", "disable":
+		if r.Method != http.MethodPost {
+			jsonError(w, 405, "method not allowed")
+			return
+		}
 		if requireRole(r, "admin") != nil {
 			jsonError(w, 403, "forbidden")
 			return
 		}
-		_ = s.store.Update(func(st *State) error {
-			st.Nodes = deleteByID(st.Nodes, id, func(x Node) string { return x.ID })
+		enable := action == "enable"
+		err := s.store.Update(func(st *State) error {
+			n := findNode(st, id)
+			if n == nil {
+				return errors.New("node not found")
+			}
+			n.Enabled = enable
+			n.UpdatedAt = time.Now().UTC()
+			if enable {
+				n.Status = NodeStatusUnknown
+				n.FailureCount = 0
+				n.LastError = ""
+			} else {
+				n.Status = NodeStatusDisabled
+			}
 			return nil
 		})
-		s.audit(r, "delete", "node:"+id)
-		jsonWrite(w, 200, map[string]bool{"ok": true})
+		if err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		s.audit(r, action, "node:"+id)
+		if enable {
+			go s.probeNode(id)
+		}
+		node, _ := loadNode()
+		jsonWrite(w, 200, node)
+		return
+
+	case "maintenance":
+		if r.Method != http.MethodPost {
+			jsonError(w, 405, "method not allowed")
+			return
+		}
+		if requireRole(r, "admin") != nil {
+			jsonError(w, 403, "forbidden")
+			return
+		}
+		var in struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			jsonError(w, 400, err.Error())
+			return
+		}
+		err := s.store.Update(func(st *State) error {
+			n := findNode(st, id)
+			if n == nil {
+				return errors.New("node not found")
+			}
+			n.Maintenance = in.Enabled
+			n.UpdatedAt = time.Now().UTC()
+			if !n.Enabled {
+				n.Status = NodeStatusDisabled
+			} else if in.Enabled {
+				n.Status = NodeStatusMaintenance
+			} else {
+				n.Status = NodeStatusUnknown
+				n.FailureCount = 0
+				n.LastError = ""
+			}
+			return nil
+		})
+		if err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		s.audit(r, "maintenance", "node:"+id)
+		if !in.Enabled {
+			go s.probeNode(id)
+		}
+		node, _ := loadNode()
+		jsonWrite(w, 200, node)
+		return
+
+	case "metrics":
+		if r.Method != http.MethodGet {
+			jsonError(w, 405, "method not allowed")
+			return
+		}
+		node, err := loadNode()
+		if err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		jsonWrite(w, 200, map[string]any{
+			"node_id":       node.ID,
+			"status":        node.Status,
+			"last_seen":     node.LastSeen,
+			"failure_count": node.FailureCount,
+			"last_error":    node.LastError,
+			"metrics":       node.Metrics,
+		})
+		return
+
+	case "tunnels":
+		if r.Method != http.MethodGet {
+			jsonError(w, 405, "method not allowed")
+			return
+		}
+		if _, err := loadNode(); err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		var tunnels []Tunnel
+		_ = s.store.Read(func(st State) error {
+			for _, t := range st.Tunnels {
+				if t.SourceNodeID == id || t.DestinationNodeID == id {
+					tunnels = append(tunnels, t)
+				}
+			}
+			return nil
+		})
+		jsonWrite(w, 200, tunnels)
 		return
 	}
-	jsonError(w, 405, "method not allowed")
+
+	jsonError(w, 404, "not found")
 }
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if requireRole(r, "admin") != nil {
