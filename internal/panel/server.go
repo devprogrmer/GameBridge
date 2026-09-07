@@ -373,68 +373,134 @@ func defaultString(v, d string) string {
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		var x []User
-		_ = s.store.Read(func(st State) error { x = st.Users; return nil })
-		jsonWrite(w, 200, x)
+		var out []map[string]any
+		_ = s.store.Read(func(st State) error {
+			now := time.Now().UTC()
+			for _, u := range st.Users {
+				out = append(out, map[string]any{
+					"user":         u,
+					"entitlements": userEntitlements(&st, u, now),
+				})
+			}
+			return nil
+		})
+		jsonWrite(w, 200, out)
+
 	case http.MethodPost:
 		if requireRole(r, "admin") != nil {
 			jsonError(w, 403, "forbidden")
 			return
 		}
 		var in User
-		if e := decodeJSON(r, &in); e != nil {
-			jsonError(w, 400, e.Error())
+		if err := decodeJSON(r, &in); err != nil {
+			jsonError(w, 400, err.Error())
 			return
 		}
 		in.Username = normalizeUsername(in.Username)
+		in.DisplayName = strings.TrimSpace(in.DisplayName)
+		in.Email = strings.TrimSpace(in.Email)
 		if in.Username == "" {
 			jsonError(w, 400, "username required")
 			return
 		}
+
+		now := time.Now().UTC()
 		in.ID = randomHex(12)
 		in.SubscriptionToken = randomHex(24)
-		in.Status = defaultString(in.Status, "active")
-		in.CreatedAt = time.Now().UTC()
-		in.UpdatedAt = in.CreatedAt
-		e := s.store.Update(func(st *State) error {
+		in.Status = UserStatusActive
+		in.StatusReason = ""
+		in.CreatedAt = now
+		in.UpdatedAt = now
+
+		err := s.store.Update(func(st *State) error {
 			for _, u := range st.Users {
 				if u.Username == in.Username {
 					return errors.New("username exists")
 				}
 			}
+			if in.PlanID != "" {
+				p := findPlan(st, in.PlanID)
+				if p == nil {
+					return errors.New("plan not found")
+				}
+				if !p.Enabled {
+					return errors.New("plan is disabled")
+				}
+			}
 			maybeSetPlanExpiry(st, &in)
+			in.Status, in.StatusReason = userLifecycleStatus(st, in, now)
 			st.Users = append(st.Users, in)
 			return nil
 		})
-		if e != nil {
-			jsonError(w, 409, e.Error())
+		if err != nil {
+			jsonError(w, 409, err.Error())
 			return
 		}
+
 		s.audit(r, "create", "user:"+in.Username)
-		jsonWrite(w, 201, in)
+		_, ent, _ := s.loadUserEntitlements(in.ID)
+		jsonWrite(w, 201, map[string]any{"user": in, "entitlements": ent})
+
 	default:
 		jsonError(w, 405, "method not allowed")
 	}
 }
 func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request, rest string) {
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		jsonError(w, 404, "user not found")
+		return
+	}
 	id := parts[0]
+
 	if len(parts) == 2 && parts[1] == "wireguard" {
 		s.handleUserWireGuard(w, r, id)
 		return
 	}
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "enable", "disable", "reset-traffic", "renew", "regenerate-token", "apply-plan":
+			s.handleUserSubscriptionAction(w, r, id, parts[1])
+			return
+		case "entitlements":
+			if r.Method != http.MethodGet {
+				jsonError(w, 405, "method not allowed")
+				return
+			}
+			_, ent, err := s.loadUserEntitlements(id)
+			if err != nil {
+				jsonError(w, 404, err.Error())
+				return
+			}
+			jsonWrite(w, 200, ent)
+			return
+		}
+	}
+	if len(parts) != 1 {
+		jsonError(w, 404, "not found")
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		var u *User
 		var peers []VPNPeer
+		var bindings []InboundClient
+		var ent UserEntitlements
 		_ = s.store.Read(func(st State) error {
 			if x := findUser(&st, id); x != nil {
 				c := *x
 				u = &c
+				ent = userEntitlements(&st, c, time.Now().UTC())
 			}
 			for _, p := range st.VPNPeers {
 				if p.UserID == id {
 					peers = append(peers, p)
+				}
+			}
+			for _, b := range st.InboundClients {
+				if b.UserID == id {
+					bindings = append(bindings, b)
 				}
 			}
 			return nil
@@ -443,17 +509,116 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request, rest str
 			jsonError(w, 404, "user not found")
 			return
 		}
-		jsonWrite(w, 200, map[string]any{"user": u, "vpn_peers": peers})
+		jsonWrite(w, 200, map[string]any{
+			"user":            u,
+			"entitlements":    ent,
+			"vpn_peers":       peers,
+			"inbound_clients": bindings,
+		})
+
+	case http.MethodPut:
+		if requireRole(r, "admin") != nil {
+			jsonError(w, 403, "forbidden")
+			return
+		}
+		var in struct {
+			Username          string    `json:"username"`
+			DisplayName       string    `json:"display_name"`
+			Email             string    `json:"email"`
+			PlanID            string    `json:"plan_id"`
+			ExpiresAt         time.Time `json:"expires_at"`
+			DataLimitBytes    int64     `json:"data_limit_bytes"`
+			DeviceLimit       int       `json:"device_limit"`
+			ResetIntervalDays int       `json:"reset_interval_days"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			jsonError(w, 400, err.Error())
+			return
+		}
+
+		var deployNodes []string
+		now := time.Now().UTC()
+		err := s.store.Update(func(st *State) error {
+			u := findUser(st, id)
+			if u == nil {
+				return errors.New("user not found")
+			}
+			if strings.TrimSpace(in.Username) != "" {
+				username := normalizeUsername(in.Username)
+				for _, x := range st.Users {
+					if x.ID != id && x.Username == username {
+						return errors.New("username exists")
+					}
+				}
+				u.Username = username
+			}
+			if in.PlanID != "" {
+				p := findPlan(st, in.PlanID)
+				if p == nil {
+					return errors.New("plan not found")
+				}
+				if !p.Enabled {
+					return errors.New("plan is disabled")
+				}
+				u.PlanID = in.PlanID
+			}
+			u.DisplayName = strings.TrimSpace(in.DisplayName)
+			u.Email = strings.TrimSpace(in.Email)
+			u.ExpiresAt = in.ExpiresAt
+			u.DataLimitBytes = in.DataLimitBytes
+			u.DeviceLimit = in.DeviceLimit
+			u.ResetIntervalDays = in.ResetIntervalDays
+			if u.NextTrafficResetAt.IsZero() {
+				if days := effectiveResetIntervalDays(st, *u); days > 0 {
+					u.NextTrafficResetAt = now.Add(time.Duration(days) * 24 * time.Hour)
+				}
+			}
+			if u.Status != UserStatusDisabled {
+				u.Status, u.StatusReason = userLifecycleStatus(st, *u, now)
+			}
+			u.UpdatedAt = now
+
+			for _, b := range st.InboundClients {
+				if b.UserID == id {
+					if inbound := findInbound(st, b.InboundID); inbound != nil {
+						deployNodes = append(deployNodes, inbound.NodeID)
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			jsonError(w, 409, err.Error())
+			return
+		}
+		for _, nodeID := range deployNodes {
+			_ = s.deployXrayNode(nodeID)
+		}
+		s.audit(r, "update", "user:"+id)
+		user, ent, _ := s.loadUserEntitlements(id)
+		jsonWrite(w, 200, map[string]any{"user": user, "entitlements": ent})
+
 	case http.MethodDelete:
 		if requireRole(r, "admin") != nil {
 			jsonError(w, 403, "forbidden")
 			return
 		}
 		var peers []VPNPeer
+		var nodeIDs []string
 		_ = s.store.Read(func(st State) error {
+			if findUser(&st, id) == nil {
+				return errors.New("user not found")
+			}
 			for _, p := range st.VPNPeers {
 				if p.UserID == id {
 					peers = append(peers, p)
+				}
+			}
+			for _, b := range st.InboundClients {
+				if b.UserID == id {
+					if in := findInbound(&st, b.InboundID); in != nil {
+						nodeIDs = append(nodeIDs, in.NodeID)
+					}
 				}
 			}
 			return nil
@@ -461,19 +626,28 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request, rest str
 		for _, p := range peers {
 			_ = s.deleteRemotePeer(p)
 		}
-		_ = s.store.Update(func(st *State) error {
-			st.Users = deleteByID(st.Users, id, func(x User) string { return x.ID })
-			var keep []VPNPeer
-			for _, p := range st.VPNPeers {
-				if p.UserID != id {
-					keep = append(keep, p)
-				}
+		err := s.store.Update(func(st *State) error {
+			if findUser(st, id) == nil {
+				return errors.New("user not found")
 			}
-			st.VPNPeers = keep
+			st.Users = deleteByID(st.Users, id, func(x User) string { return x.ID })
+			st.VPNPeers = deleteUserVPNPeers(st.VPNPeers, id)
+			st.InboundClients = deleteUserInboundClients(st.InboundClients, id)
+			for i := range st.RoutingRules {
+				st.RoutingRules[i].UserIDs = deleteString(st.RoutingRules[i].UserIDs, id)
+			}
 			return nil
 		})
+		if err != nil {
+			jsonError(w, 404, err.Error())
+			return
+		}
+		for _, nodeID := range nodeIDs {
+			_ = s.deployXrayNode(nodeID)
+		}
 		s.audit(r, "delete", "user:"+id)
 		jsonWrite(w, 200, map[string]bool{"ok": true})
+
 	default:
 		jsonError(w, 405, "method not allowed")
 	}
@@ -484,25 +658,51 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		var x []Plan
 		_ = s.store.Read(func(st State) error { x = st.Plans; return nil })
 		jsonWrite(w, 200, x)
+
 	case http.MethodPost:
 		if requireRole(r, "admin") != nil {
 			jsonError(w, 403, "forbidden")
 			return
 		}
 		var in Plan
-		if e := decodeJSON(r, &in); e != nil {
-			jsonError(w, 400, e.Error())
+		if err := decodeJSON(r, &in); err != nil {
+			jsonError(w, 400, err.Error())
 			return
 		}
-		in.ID = randomHex(12)
-		in.CreatedAt = time.Now().UTC()
+		in.Name = strings.TrimSpace(in.Name)
+		if in.Name == "" {
+			jsonError(w, 400, "plan name required")
+			return
+		}
+		if in.DataLimitBytes < 0 || in.DurationDays < 0 || in.ResetIntervalDays < 0 {
+			jsonError(w, 400, "plan limits cannot be negative")
+			return
+		}
 		if in.DeviceLimit <= 0 {
 			in.DeviceLimit = 1
 		}
+		now := time.Now().UTC()
+		in.ID = randomHex(12)
 		in.Enabled = true
-		_ = s.store.Update(func(st *State) error { st.Plans = append(st.Plans, in); return nil })
+		in.CreatedAt = now
+		in.UpdatedAt = now
+
+		err := s.store.Update(func(st *State) error {
+			for _, p := range st.Plans {
+				if strings.EqualFold(p.Name, in.Name) {
+					return errors.New("plan name exists")
+				}
+			}
+			st.Plans = append(st.Plans, in)
+			return nil
+		})
+		if err != nil {
+			jsonError(w, 409, err.Error())
+			return
+		}
 		s.audit(r, "create", "plan:"+in.Name)
 		jsonWrite(w, 201, in)
+
 	default:
 		jsonError(w, 405, "method not allowed")
 	}
@@ -512,16 +712,107 @@ func (s *Server) handlePlanItem(w http.ResponseWriter, r *http.Request, id strin
 		jsonError(w, 403, "forbidden")
 		return
 	}
-	if r.Method != http.MethodDelete {
+
+	switch r.Method {
+	case http.MethodGet:
+		var plan *Plan
+		users := 0
+		_ = s.store.Read(func(st State) error {
+			if p := findPlan(&st, id); p != nil {
+				cp := *p
+				plan = &cp
+			}
+			for _, u := range st.Users {
+				if u.PlanID == id {
+					users++
+				}
+			}
+			return nil
+		})
+		if plan == nil {
+			jsonError(w, 404, "plan not found")
+			return
+		}
+		jsonWrite(w, 200, map[string]any{"plan": plan, "assigned_users": users})
+
+	case http.MethodPut:
+		var in Plan
+		if err := decodeJSON(r, &in); err != nil {
+			jsonError(w, 400, err.Error())
+			return
+		}
+		in.Name = strings.TrimSpace(in.Name)
+		if in.Name == "" {
+			jsonError(w, 400, "plan name required")
+			return
+		}
+		if in.DataLimitBytes < 0 || in.DurationDays < 0 || in.ResetIntervalDays < 0 {
+			jsonError(w, 400, "plan limits cannot be negative")
+			return
+		}
+		if in.DeviceLimit <= 0 {
+			in.DeviceLimit = 1
+		}
+		err := s.store.Update(func(st *State) error {
+			p := findPlan(st, id)
+			if p == nil {
+				return errors.New("plan not found")
+			}
+			for _, other := range st.Plans {
+				if other.ID != id && strings.EqualFold(other.Name, in.Name) {
+					return errors.New("plan name exists")
+				}
+			}
+			p.Name = in.Name
+			p.DataLimitBytes = in.DataLimitBytes
+			p.DurationDays = in.DurationDays
+			p.DeviceLimit = in.DeviceLimit
+			p.ResetIntervalDays = in.ResetIntervalDays
+			p.Enabled = in.Enabled
+			p.UpdatedAt = time.Now().UTC()
+			return nil
+		})
+		if err != nil {
+			jsonError(w, 409, err.Error())
+			return
+		}
+		s.audit(r, "update", "plan:"+id)
+		var out Plan
+		_ = s.store.Read(func(st State) error {
+			if p := findPlan(&st, id); p != nil {
+				out = *p
+			}
+			return nil
+		})
+		jsonWrite(w, 200, out)
+
+	case http.MethodDelete:
+		err := s.store.Update(func(st *State) error {
+			if findPlan(st, id) == nil {
+				return errors.New("plan not found")
+			}
+			for _, u := range st.Users {
+				if u.PlanID == id {
+					return errors.New("plan is assigned to users")
+				}
+			}
+			st.Plans = deleteByID(st.Plans, id, func(x Plan) string { return x.ID })
+			return nil
+		})
+		if err != nil {
+			if err.Error() == "plan not found" {
+				jsonError(w, 404, err.Error())
+			} else {
+				jsonError(w, 409, err.Error())
+			}
+			return
+		}
+		s.audit(r, "delete", "plan:"+id)
+		jsonWrite(w, 200, map[string]bool{"ok": true})
+
+	default:
 		jsonError(w, 405, "method not allowed")
-		return
 	}
-	_ = s.store.Update(func(st *State) error {
-		st.Plans = deleteByID(st.Plans, id, func(x Plan) string { return x.ID })
-		return nil
-	})
-	s.audit(r, "delete", "plan:"+id)
-	jsonWrite(w, 200, map[string]bool{"ok": true})
 }
 func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

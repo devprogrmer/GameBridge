@@ -336,6 +336,35 @@ func deleteByID[T any](a []T, id string, get func(T) string) []T {
 	return out
 }
 
+func deleteUserVPNPeers(peers []VPNPeer, userID string) []VPNPeer {
+	out := peers[:0]
+	for _, p := range peers {
+		if p.UserID != userID {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func deleteUserInboundClients(clients []InboundClient, userID string) []InboundClient {
+	out := clients[:0]
+	for _, c := range clients {
+		if c.UserID != userID {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func deleteString(values []string, target string) []string {
+	out := values[:0]
+	for _, v := range values {
+		if v != target {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 func normalizeUsername(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 
 func sortAudit(st *State) {
