@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -605,68 +604,6 @@ func (s *Server) handleUserWireGuard(w http.ResponseWriter, r *http.Request, use
 		jsonError(w, 405, "method not allowed")
 	}
 }
-func (s *Server) createWGPeerLegacy(userID string, in wgCreate) (VPNPeer, string, error) {
-	var u User
-	var n Node
-	count := 0
-	if e := s.store.Read(func(st State) error {
-		x := findUser(&st, userID)
-		if x == nil {
-			return errors.New("user not found")
-		}
-		u = *x
-		y := findNode(&st, in.NodeID)
-		if y == nil {
-			return errors.New("node not found")
-		}
-		n = *y
-		for _, p := range st.VPNPeers {
-			if p.UserID == userID {
-				count++
-			}
-		}
-		if count >= effectiveDeviceLimit(&st, u) {
-			return errors.New("device limit reached")
-		}
-		return nil
-	}); e != nil {
-		return VPNPeer{}, "", e
-	}
-	client := in.ClientAddress
-	if client == "" {
-		ip, network, e := net.ParseCIDR(in.ServerAddress)
-		if e != nil {
-			return VPNPeer{}, "", e
-		}
-		candidate := append(net.IP(nil), ip...)
-		for i := 0; i < count+1; i++ {
-			incIP(candidate)
-		}
-		if !network.Contains(candidate) {
-			return VPNPeer{}, "", errors.New("WireGuard subnet exhausted")
-		}
-		client = candidate.String() + "/32"
-	}
-	var srv map[string]any
-	if e := s.agentJSON(n, http.MethodPost, "/v1/wireguard/server", map[string]any{"interface": in.Interface, "address": in.ServerAddress, "listen_port": in.ListenPort, "internet_interface": n.InternetInterface}, &srv); e != nil {
-		return VPNPeer{}, "", e
-	}
-	endpoint := net.JoinHostPort(n.PublicIP, strconv.Itoa(in.ListenPort))
-	var resp struct {
-		PrivateKey      string `json:"private_key"`
-		PublicKey       string `json:"public_key"`
-		ServerPublicKey string `json:"server_public_key"`
-		Config          string `json:"config"`
-	}
-	if e := s.agentJSON(n, http.MethodPost, "/v1/wireguard/peer", map[string]any{"interface": in.Interface, "client_address": client, "endpoint": endpoint, "dns": in.DNS, "persistent_keepalive": 25}, &resp); e != nil {
-		return VPNPeer{}, "", e
-	}
-	priv, _ := s.crypt.Seal(resp.PrivateKey)
-	cfg, _ := s.crypt.Seal(resp.Config)
-	p := VPNPeer{ID: randomHex(12), UserID: userID, NodeID: in.NodeID, DeviceName: defaultString(in.DeviceName, "device-"+strconv.Itoa(count+1)), Interface: in.Interface, Address: client, PublicKey: resp.PublicKey, PrivateKeyEnc: priv, ConfigEnc: cfg, ServerPublicKey: resp.ServerPublicKey, Endpoint: endpoint, Enabled: true, CreatedAt: time.Now().UTC()}
-	_ = s.store.Update(func(st *State) error { st.VPNPeers = append(st.VPNPeers, p); return nil })
-	return p, resp.Config, nil
-}
 func (s *Server) deleteRemotePeer(p VPNPeer) error {
 	var n Node
 	if e := s.store.Read(func(st State) error {
@@ -680,73 +617,4 @@ func (s *Server) deleteRemotePeer(p VPNPeer) error {
 		return e
 	}
 	return s.agentJSON(n, http.MethodDelete, "/v1/wireguard/peer?interface="+url.QueryEscape(p.Interface)+"&public_key="+url.QueryEscape(p.PublicKey), nil, nil)
-}
-func (s *Server) syncWireGuardLegacy() {
-	var nodes []Node
-	_ = s.store.Read(func(st State) error { nodes = st.Nodes; return nil })
-	type stat struct {
-		Interface string `json:"interface"`
-		PublicKey string `json:"public_key"`
-		RXBytes   int64  `json:"rx_bytes"`
-		TXBytes   int64  `json:"tx_bytes"`
-	}
-	seen := map[string]stat{}
-	for _, n := range nodes {
-		if !n.Enabled {
-			continue
-		}
-		var resp struct {
-			Peers []stat `json:"peers"`
-		}
-		if s.agentJSON(n, http.MethodGet, "/v1/wireguard/stats", nil, &resp) == nil {
-			for _, p := range resp.Peers {
-				seen[n.ID+"|"+p.PublicKey] = p
-			}
-		}
-	}
-	var disable []VPNPeer
-	_ = s.store.Update(func(st *State) error {
-		now := time.Now().UTC()
-		for i := range st.VPNPeers {
-			p := &st.VPNPeers[i]
-			if x, ok := seen[p.NodeID+"|"+p.PublicKey]; ok {
-				p.RXBytes = x.RXBytes
-				p.TXBytes = x.TXBytes
-			}
-		}
-		for i := range st.Users {
-			u := &st.Users[i]
-			var total int64
-			for _, p := range st.VPNPeers {
-				if p.UserID == u.ID {
-					total += p.RXBytes + p.TXBytes
-				}
-			}
-			u.TrafficUsedBytes = total
-			limit := effectiveUserLimit(st, *u)
-			expired := !u.ExpiresAt.IsZero() && now.After(u.ExpiresAt)
-			if u.Status == "active" && ((limit > 0 && total >= limit) || expired) {
-				if expired {
-					u.Status = "expired"
-				} else {
-					u.Status = "quota-exceeded"
-				}
-				for _, p := range st.VPNPeers {
-					if p.UserID == u.ID && p.Enabled {
-						disable = append(disable, p)
-					}
-				}
-			}
-		}
-		return nil
-	})
-	for _, p := range disable {
-		_ = s.deleteRemotePeer(p)
-		_ = s.store.Update(func(st *State) error {
-			if x := findPeer(st, p.ID); x != nil {
-				x.Enabled = false
-			}
-			return nil
-		})
-	}
 }
