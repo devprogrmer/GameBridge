@@ -1,3 +1,3 @@
-export default function Sidebar() {
-  return <aside>GameBridge Panel</aside>;
+export default function Sidebar(){
+  return <aside>GameBridge</aside>
 }

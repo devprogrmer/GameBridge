@@ -1,3 +1,3 @@
-export default function Nodes() {
-  return <div>Nodes</div>;
+export default function Nodes(){
+  return <div>Nodes</div>
 }
