@@ -62,3 +62,70 @@ func TestControlCenterCoversCoreNetworkAPIs(t *testing.T) {
 		}
 	}
 }
+
+func TestProfessionalUXBranding(t *testing.T) {
+	indexBytes, err := webFS.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleBytes, err := webFS.ReadFile("web/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexBytes)
+	styles := string(styleBytes)
+
+	for _, needle := range []string{
+		`class="gb-logo large"`,
+		`class="gb-logo small"`,
+		`id="global-search"`,
+		`class="env-chip"`,
+	} {
+		if !strings.Contains(index, needle) {
+			t.Fatalf("professional shell missing %q", needle)
+		}
+	}
+	for _, needle := range []string{
+		".page-hero",
+		".resource-grid",
+		".failover-flow",
+		".route-card",
+		".audit-timeline",
+		".gb-logo",
+	} {
+		if !strings.Contains(styles, needle) {
+			t.Fatalf("professional stylesheet missing %q", needle)
+		}
+	}
+}
+
+func TestProfessionalUXHasDedicatedOperationalPages(t *testing.T) {
+	b, err := webFS.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(b)
+	required := []string{
+		"Node Fleet",
+		"Inbound Gateway",
+		"Outbound Control Center",
+		"Failover & Load Balancing",
+		"Routing Rules",
+		"Traffic Analytics",
+		"GameBridge Tunnels",
+		"Audit Timeline",
+		"openOutboundEdit",
+		"openGroupEdit",
+		"openRoutingEdit",
+		"openUserEdit",
+		"openPlanEdit",
+		"openInboundEdit",
+		"probeAllOutbounds",
+		"applyPageFilter",
+	}
+	for _, needle := range required {
+		if !strings.Contains(app, needle) {
+			t.Fatalf("professional UX missing %q", needle)
+		}
+	}
+}
