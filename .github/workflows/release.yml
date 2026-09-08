@@ -13,17 +13,22 @@ jobs:
     name: Publish Release
     runs-on: ubuntu-latest
     timeout-minutes: 25
+
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
       - run: go mod download
+
       - name: Build release binaries
         env:
           GOOS: linux
@@ -32,20 +37,28 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+
           for component in core panel agent; do
             binary="gamebridge-${component}-linux-${{ matrix.arch }}"
-            go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/${binary}" "./cmd/gamebridge-${component}"
+            go build -trimpath \
+              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/${binary}" \
+              "./cmd/gamebridge-${component}"
+
             (cd dist && sha256sum "${binary}" > "${binary}.sha256")
           done
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
 
+
   container:
     name: Publish Panel Container
     runs-on: ubuntu-latest
     timeout-minutes: 35
+
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +83,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
-          type=sha
+            type=sha
           labels: |
             org.opencontainers.image.title=GameBridge
             org.opencontainers.image.description=GameBridge Network Control Center
@@ -94,4 +107,3 @@ jobs:
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
