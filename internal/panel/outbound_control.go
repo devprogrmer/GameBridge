@@ -136,6 +136,18 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.Port = in.Port
 		x.Username = in.Username
 		x.PasswordEnc = passwordEnc
+		x.Transport = in.Transport
+		x.TLSMode = in.TLSMode
+		x.Path = in.Path
+		x.Host = in.Host
+		x.ServiceName = in.ServiceName
+		x.ServerName = in.ServerName
+		x.AllowInsecure = in.AllowInsecure
+		x.Fingerprint = in.Fingerprint
+		x.Flow = in.Flow
+		x.ShadowsocksMethod = in.ShadowsocksMethod
+		x.RealityPublicKey = in.RealityPublicKey
+		x.RealityShortID = in.RealityShortID
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -352,29 +364,46 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		secret := outboundInputSecret(in)
+		if outboundProtocolNeedsSecret(in.Protocol) && secret == "" {
+			jsonError(w, http.StatusBadRequest, "credential is required for selected outbound protocol")
+			return
+		}
 		passwordEnc := ""
-		if in.Password != "" {
+		if secret != "" {
 			var err error
-			passwordEnc, err = s.crypt.Seal(in.Password)
+			passwordEnc, err = s.crypt.Seal(secret)
 			if err != nil {
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 		}
 		obj := Outbound{
-			ID:          randomHex(12),
-			Name:        in.Name,
-			NodeID:      in.NodeID,
-			Tag:         in.Tag,
-			Protocol:    in.Protocol,
-			Address:     in.Address,
-			Port:        in.Port,
-			Username:    in.Username,
-			PasswordEnc: passwordEnc,
-			Enabled:     true,
-			Remark:      in.Remark,
-			CreatedAt:   time.Now().UTC(),
-			UpdatedAt:   time.Now().UTC(),
+			ID:                randomHex(12),
+			Name:              in.Name,
+			NodeID:            in.NodeID,
+			Tag:               in.Tag,
+			Protocol:          in.Protocol,
+			Address:           in.Address,
+			Port:              in.Port,
+			Username:          in.Username,
+			PasswordEnc:       passwordEnc,
+			Transport:         in.Transport,
+			TLSMode:           in.TLSMode,
+			Path:              in.Path,
+			Host:              in.Host,
+			ServiceName:       in.ServiceName,
+			ServerName:        in.ServerName,
+			AllowInsecure:     in.AllowInsecure,
+			Fingerprint:       in.Fingerprint,
+			Flow:              in.Flow,
+			ShadowsocksMethod: in.ShadowsocksMethod,
+			RealityPublicKey:  in.RealityPublicKey,
+			RealityShortID:    in.RealityShortID,
+			Enabled:           true,
+			Remark:            in.Remark,
+			CreatedAt:         time.Now().UTC(),
+			UpdatedAt:         time.Now().UTC(),
 		}
 		if err := createOutboundTransactional(s.store, obj, s.deployXrayNode); err != nil {
 			if isOutboundDeploymentError(err) {
@@ -518,12 +547,17 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			jsonError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if in.Password != "" {
-			passwordEnc, err = s.crypt.Seal(in.Password)
+		secret := outboundInputSecret(in)
+		if secret != "" {
+			passwordEnc, err = s.crypt.Seal(secret)
 			if err != nil {
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+		}
+		if outboundProtocolNeedsSecret(in.Protocol) && passwordEnc == "" {
+			jsonError(w, http.StatusBadRequest, "credential is required for selected outbound protocol")
+			return
 		}
 
 		if err := updateOutboundTransactional(s.store, id, in, passwordEnc, s.deployXrayNode); err != nil {
