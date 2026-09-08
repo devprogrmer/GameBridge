@@ -522,6 +522,8 @@ func (s *Server) background() {
 	defer sync.Stop()
 
 	s.reconcileSubscriptionsAndDeploy()
+	s.ensureOutboundHealthRuntime()
+	go s.probeAllOutboundHealth()
 
 	for {
 		select {
@@ -543,6 +545,7 @@ func (s *Server) background() {
 		case <-sync.C:
 			s.syncWireGuard()
 			s.reconcileSubscriptionsAndDeploy()
+			go s.probeAllOutboundHealth()
 		}
 	}
 }

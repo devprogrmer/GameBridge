@@ -159,6 +159,13 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.OpenVPNRoutingTable = in.OpenVPNRoutingTable
 		x.OpenVPNMark = in.OpenVPNMark
 		x.CustomXrayProtocol = in.CustomXrayProtocol
+		x.HealthStatus = "unknown"
+		x.HealthLatencyMS = 0
+		x.HealthLastCheckedAt = nil
+		x.HealthLastSuccessAt = nil
+		x.HealthLastError = ""
+		x.HealthFailureCount = 0
+		x.HealthTarget = ""
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -343,6 +350,8 @@ func (s *Server) outboundSummary(id string) (map[string]any, error) {
 			"node_status":      nodeStatus,
 			"node_enabled":     nodeEnabled,
 			"node_maintenance": nodeMaintenance,
+			"health_status":    normalizeOutboundHealthStatus(x.HealthStatus),
+			"health_ready":     x.Enabled && normalizeOutboundHealthStatus(x.HealthStatus) == "healthy",
 			"ready":            x.Enabled && node != nil && node.Enabled && !node.Maintenance,
 		}
 		return nil
@@ -438,6 +447,7 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			OpenVPNRoutingTable:    in.OpenVPNRoutingTable,
 			OpenVPNMark:            in.OpenVPNMark,
 			CustomXrayProtocol:     in.CustomXrayProtocol,
+			HealthStatus:           "unknown",
 			Enabled:                true,
 			Remark:                 in.Remark,
 			CreatedAt:              time.Now().UTC(),
@@ -481,6 +491,48 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 				return
 			}
 			jsonWrite(w, http.StatusOK, out)
+			return
+
+		case "health":
+			if r.Method != http.MethodGet {
+				jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			var out *Outbound
+			_ = s.store.Read(func(st State) error {
+				if x := findOutbound(&st, id); x != nil {
+					cp := *x
+					out = &cp
+				}
+				return nil
+			})
+			if out == nil {
+				jsonError(w, http.StatusNotFound, "outbound not found")
+				return
+			}
+			jsonWrite(w, http.StatusOK, outboundHealthView(*out))
+			return
+
+		case "probe":
+			if r.Method != http.MethodPost {
+				jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			if requireRole(r, "operator") != nil {
+				jsonError(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			out, err := s.probeOutboundHealth(id)
+			if err != nil {
+				if err.Error() == "outbound not found" {
+					jsonError(w, http.StatusNotFound, err.Error())
+				} else {
+					jsonError(w, http.StatusConflict, err.Error())
+				}
+				return
+			}
+			s.audit(r, "probe", "outbound:"+id)
+			jsonWrite(w, http.StatusOK, outboundHealthView(out))
 			return
 
 		case "enable", "disable":

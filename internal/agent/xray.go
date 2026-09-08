@@ -20,6 +20,7 @@ func (s *Server) registerXrayRoutes() {
 	s.mux.HandleFunc("/v1/xray/install", s.auth(s.handleXrayInstall))
 	s.mux.HandleFunc("/v1/xray/x25519", s.auth(s.handleXrayX25519))
 	s.mux.HandleFunc("/v1/xray/apply", s.auth(s.handleXrayApply))
+	s.mux.HandleFunc("/v1/xray/outbound-probe", s.auth(s.handleXrayOutboundProbe))
 }
 
 func xrayBinary() string {

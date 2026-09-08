@@ -286,6 +286,18 @@ func (s *Server) buildXrayConfig(nodeID string) (map[string]any, Node, error) {
 		return nil, Node{}, err
 	}
 
+	healthInbounds, healthRules, err := buildOutboundHealthXray(st, nodeID)
+	if err != nil {
+		return nil, Node{}, err
+	}
+	inbounds = append(inbounds, healthInbounds...)
+
+	routing := buildXrayRouting(st, nodeID)
+	if len(healthRules) > 0 {
+		existingRules, _ := routing["rules"].([]any)
+		routing["rules"] = append(healthRules, existingRules...)
+	}
+
 	cfg := map[string]any{
 		"log": map[string]any{"loglevel": "warning"},
 		"api": map[string]any{
@@ -311,7 +323,7 @@ func (s *Server) buildXrayConfig(nodeID string) (map[string]any, Node, error) {
 		"stats":     map[string]any{},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
-		"routing":   buildXrayRouting(st, nodeID),
+		"routing":   routing,
 	}
 
 	return cfg, *node, nil
