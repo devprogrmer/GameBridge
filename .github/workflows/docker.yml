@@ -48,19 +48,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Start panel container
-        run: |
-          set -euo pipefail
-          docker volume create gamebridge-ci-data >/dev/null
-          docker run -d \
-            --name gamebridge-panel-ci \
-            --read-only \
-            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
-            --security-opt no-new-privileges \
-            --cap-drop ALL \
-            -p 127.0.0.1:18088:8088 \
-            -v gamebridge-ci-data:/data \
-            gamebridge-panel:ci >/dev/null
+  - name: Start panel container
+    run: |
+      set -euo pipefail
+      docker volume create gamebridge-ci-data >/dev/null
+      docker run -d \
+        --name gamebridge-panel-ci \
+        --read-only \
+        --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+        --tmpfs /etc/gamebridge:rw,noexec,nosuid,size=16m \
+        --security-opt no-new-privileges \
+        --cap-drop ALL \
+        -p 127.0.0.1:18088:8088 \
+        -v gamebridge-ci-data:/data \
+        gamebridge-panel:ci >/dev/null
 
       - name: Smoke test
         run: |
