@@ -181,6 +181,9 @@ type Outbound struct {
 	WireGuardKeepalive     int       `json:"wireguard_keepalive"`
 	WireGuardMTU           int       `json:"wireguard_mtu"`
 	TorSOCKSPort           int       `json:"tor_socks_port"`
+	OpenVPNInterface       string    `json:"openvpn_interface"`
+	OpenVPNRoutingTable    int       `json:"openvpn_routing_table"`
+	OpenVPNMark            int       `json:"openvpn_mark"`
 	Enabled                bool      `json:"enabled"`
 	Remark                 string    `json:"remark"`
 	CreatedAt              time.Time `json:"created_at"`
