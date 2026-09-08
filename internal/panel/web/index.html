@@ -13,7 +13,7 @@
   <section id="auth-screen" class="auth-screen">
     <div class="auth-shell">
       <div class="auth-brand">
-        <div class="logo-mark">GB</div>
+        <div class="gb-logo large" aria-label="GameBridge"><span>G</span><i></i></div>
         <div>
           <h1>GameBridge</h1>
           <p>Gaming Network Control Center</p>
@@ -59,7 +59,7 @@
   <div id="app" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-brand">
-        <div class="logo-mark small">GB</div>
+        <div class="gb-logo small" aria-label="GameBridge"><span>G</span><i></i></div>
         <div>
           <strong>GameBridge</strong>
           <small id="role-label">Control Center</small>
@@ -124,7 +124,13 @@
           <h2 id="page-title">داشبورد</h2>
           <p id="page-subtitle">وضعیت لحظه‌ای Control Plane</p>
         </div>
-        <div class="topbar-actions">
+        <div class="topbar-actions professional-actions">
+          <label class="global-search">
+            <span>⌕</span>
+            <input id="global-search" placeholder="جستجو در همین صفحه..." autocomplete="off">
+            <kbd>/</kbd>
+          </label>
+          <span class="env-chip"><i></i> Control Plane</span>
           <button class="btn ghost" data-action="refresh-page">↻ Refresh</button>
           <button id="page-action" class="btn primary hidden" data-action="new-current">+ جدید</button>
         </div>
@@ -138,7 +144,7 @@
 
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-backdrop" data-action="close-modal"></div>
-    <div class="modal-card">
+    <div id="modal-card" class="modal-card">
       <div class="modal-head">
         <div>
           <span id="modal-eyebrow" class="eyebrow">GAMEBRIDGE</span>

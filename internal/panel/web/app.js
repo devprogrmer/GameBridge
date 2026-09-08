@@ -115,6 +115,54 @@
     return `<span class="latency ${cls}">${n} ms</span>`;
   }
 
+
+  function pct(used, limit) {
+    const u = Number(used || 0), l = Number(limit || 0);
+    if (!l) return 0;
+    return Math.max(0, Math.min(100, Math.round((u / l) * 100)));
+  }
+
+  function usageBar(used, limit) {
+    const p = pct(used, limit);
+    const label = limit ? `${fmtBytes(used)} / ${fmtBytes(limit)}` : `${fmtBytes(used)} / Unlimited`;
+    return `<div class="usage"><div class="usage-track"><i style="width:${p}%"></i></div><small>${esc(label)}</small></div>`;
+  }
+
+  function iconTile(icon, tone = '') {
+    return `<span class="resource-icon ${esc(tone)}">${esc(icon)}</span>`;
+  }
+
+  function pageHero(kicker, title, text, stats = [], actions = '') {
+    return `<section class="page-hero">
+      <div class="hero-copy"><span class="eyebrow">${esc(kicker)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p></div>
+      <div class="hero-stats">${stats.map(x => `<div><strong>${esc(x[0])}</strong><span>${esc(x[1])}</span></div>`).join('')}</div>
+      <div class="hero-actions">${actions}</div>
+    </section>`;
+  }
+
+  function filterToolbar(placeholder, meta = '') {
+    return `<div class="resource-toolbar">
+      <div class="resource-search"><span>⌕</span><input class="page-filter" placeholder="${esc(placeholder)}"></div>
+      <div class="resource-meta">${esc(meta)}</div>
+    </div>`;
+  }
+
+  function applyPageFilter(value) {
+    const q = String(value || '').trim().toLowerCase();
+    $$('.filterable').forEach(el => {
+      const hay = (el.dataset.search || el.textContent || '').toLowerCase();
+      el.classList.toggle('hidden-by-filter', !!q && !hay.includes(q));
+    });
+  }
+
+  function resourceActions(items) {
+    return `<div class="resource-actions">${items.join('')}</div>`;
+  }
+
+  function kv(label, value, extra = '') {
+    return `<div class="kv"><span>${esc(label)}</span><strong class="${esc(extra)}">${esc(value ?? '-')}</strong></div>`;
+  }
+
   function toast(message, type = 'success') {
     const box = document.createElement('div');
     box.className = `toast ${type}`;
@@ -298,57 +346,77 @@
   async function renderDashboard() {
     const [dashboard] = await Promise.all([api('dashboard'), loadCore()]);
     state.cache.dashboard = dashboard;
-    const healthy = state.cache.outbounds.filter(x => x.enabled && x.health_status === 'healthy').length;
-    const unhealthy = state.cache.outbounds.filter(x => x.enabled && x.health_status === 'unhealthy').length;
+    const enabledOut = state.cache.outbounds.filter(x => x.enabled);
+    const healthy = enabledOut.filter(x => x.health_status === 'healthy').length;
+    const unhealthy = enabledOut.filter(x => x.health_status === 'unhealthy').length;
     const onlineNodes = state.cache.nodes.filter(x => x.status === 'online').length;
     const enabledInbounds = state.cache.inbounds.filter(x => x.enabled).length;
+    const healthRate = enabledOut.length ? Math.round((healthy / enabledOut.length) * 100) : 0;
 
     $('#content').innerHTML = `
-      <div class="grid metrics">
-        ${metricCard('Users', dashboard.users || 0, fmtBytes(dashboard.traffic_bytes || 0), '◎')}
-        ${metricCard('Nodes', `${onlineNodes}/${state.cache.nodes.length}`, 'Online agents', '◉')}
-        ${metricCard('Inbounds', `${enabledInbounds}/${state.cache.inbounds.length}`, 'Enabled listeners', '⇢')}
-        ${metricCard('Outbounds', `${healthy}/${state.cache.outbounds.length}`, `${unhealthy} unhealthy`, '⇠')}
-        ${metricCard('Failover', state.cache.groups.length, `${state.cache.routing.length} routing rules`, '⌘')}
+      ${pageHero('GAMEBRIDGE NETWORK OS', 'مرکز فرمان شبکه', 'وضعیت زیرساخت، ورودی‌ها، خروجی‌ها و Failover را از یک نقطه کنترل کنید.', [
+        [`${onlineNodes}/${state.cache.nodes.length}`, 'Nodes online'],
+        [`${healthy}/${enabledOut.length}`, 'Healthy egress'],
+        [`${state.cache.groups.length}`, 'Failover groups']
+      ], '<button class="btn primary" data-page="outbounds">Open Egress Center</button>')}
+
+      <div class="grid metrics premium-metrics">
+        ${metricCard('Users', dashboard.users || 0, fmtBytes(dashboard.traffic_bytes || 0) + ' consumed', '◎')}
+        ${metricCard('Node Fleet', `${onlineNodes}/${state.cache.nodes.length}`, 'Agents reachable', '◉')}
+        ${metricCard('Ingress', `${enabledInbounds}/${state.cache.inbounds.length}`, 'Listeners active', '⇢')}
+        ${metricCard('Egress Health', `${healthRate}%`, `${unhealthy} unhealthy`, '◌')}
+        ${metricCard('Routing', state.cache.routing.length, `${state.cache.groups.length} balancers`, '⌁')}
       </div>
 
-      <div class="grid two-col">
-        <div class="card">
+      <div class="grid dashboard-layout">
+        <div class="card fleet-panel">
           <div class="card-head">
-            <div><h3>Outbound Health</h3><p>آخرین وضعیت egressهای فعال</p></div>
-            <button class="btn small ghost" data-page="outbounds">Open Outbounds</button>
+            <div><span class="eyebrow">FLEET</span><h3>Node Fleet</h3><p>سلامت و مصرف منابع نودها</p></div>
+            <button class="btn small ghost" data-page="nodes">Manage Nodes</button>
           </div>
-          <div class="health-grid">
-            ${state.cache.outbounds.slice(0, 8).map(x => `
-              <div class="health-card">
-                <div class="row">
-                  <strong>${esc(x.name)}</strong>
-                  ${status(x.enabled ? (x.health_status || 'unknown') : 'disabled')}
+          <div class="node-fleet">
+            ${state.cache.nodes.map(n => {
+              const ram = n.metrics?.memory_total ? Math.round(100 * (1 - n.metrics.memory_available / n.metrics.memory_total)) : 0;
+              const load = Number(n.metrics?.load_1 || 0);
+              return `<article class="fleet-node filterable" data-search="${esc(`${n.name} ${n.public_ip} ${n.status}`)}">
+                <div class="fleet-node-head">${iconTile('N', n.status)}<div><strong>${esc(n.name)}</strong><small>${esc(n.public_ip || n.agent_url || '-')}</small></div>${status(n.status)}</div>
+                <div class="mini-metrics">
+                  <div><span>RAM</span><strong>${ram || 0}%</strong></div>
+                  <div><span>LOAD</span><strong>${load.toFixed(2)}</strong></div>
+                  <div><span>FAIL</span><strong>${Number(n.failure_count || 0)}</strong></div>
                 </div>
-                <small>${esc(nodeName(x.node_id))} · ${esc(x.protocol)} · ${latency(x.health_latency_ms)}</small>
-              </div>
-            `).join('') || '<div class="empty">Outbound تعریف نشده است.</div>'}
+                <div class="usage-track"><i style="width:${Math.min(100, ram || 0)}%"></i></div>
+              </article>`;
+            }).join('') || '<div class="empty">نودی اضافه نشده است.</div>'}
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-head"><div><h3>Quick Actions</h3><p>دسترسی سریع به Control Plane</p></div></div>
-          <div class="quick-actions">
-            <button class="btn ghost" data-page="inbounds">+ Inbound</button>
-            <button class="btn ghost" data-page="outbounds">+ Outbound</button>
-            <button class="btn ghost" data-page="groups">Failover Groups</button>
-            <button class="btn ghost" data-page="routing">Routing Rules</button>
+        <div class="card egress-panel">
+          <div class="card-head">
+            <div><span class="eyebrow">EGRESS</span><h3>Outbound Health</h3><p>Probe واقعی از مسیر خروجی</p></div>
+            <span class="health-score">${healthRate}%</span>
           </div>
-          <div class="stat-list">
-            ${state.cache.nodes.slice(0, 5).map(n => `
-              <div class="stat-line">
-                <span>${esc(n.name)}</span>
-                ${status(n.status)}
-              </div>`).join('') || '<div class="empty">نودی وجود ندارد.</div>'}
+          <div class="egress-stack">
+            ${state.cache.outbounds.slice(0, 7).map(x => `<button class="egress-row filterable" data-action="outbound-detail" data-id="${esc(x.id)}" data-search="${esc(`${x.name} ${x.tag} ${x.protocol}`)}">
+              <div>${iconTile((x.protocol || '?').slice(0, 1).toUpperCase(), x.health_status)}<span><strong>${esc(x.name)}</strong><small>${esc(x.protocol)} · ${esc(nodeName(x.node_id))}</small></span></div>
+              <div>${latency(x.health_latency_ms)}${status(x.enabled ? (x.health_status || 'unknown') : 'disabled')}</div>
+            </button>`).join('') || '<div class="empty">Outbound تعریف نشده است.</div>'}
           </div>
         </div>
-      </div>
-    `;
+
+        <div class="card span-full topology-panel">
+          <div class="card-head"><div><span class="eyebrow">TOPOLOGY</span><h3>Traffic Architecture</h3><p>نمای خلاصه‌ی مسیرهای GameBridge</p></div></div>
+          <div class="topology-strip">
+            <div class="topology-stage"><span>01</span><strong>${state.cache.inbounds.length}</strong><small>Inbounds</small></div>
+            <i>→</i>
+            <div class="topology-stage"><span>02</span><strong>${state.cache.routing.length}</strong><small>Routing Rules</small></div>
+            <i>→</i>
+            <div class="topology-stage"><span>03</span><strong>${state.cache.groups.length}</strong><small>Failover Groups</small></div>
+            <i>→</i>
+            <div class="topology-stage"><span>04</span><strong>${state.cache.outbounds.length}</strong><small>Outbounds</small></div>
+          </div>
+        </div>
+      </div>`;
   }
 
   function metricCard(label, value, hint, icon) {
@@ -364,107 +432,151 @@
     state.cache.users = normalizeUsers(rows);
     state.cache.plans = plans || [];
     const planByID = new Map(state.cache.plans.map(p => [p.id, p.name]));
-    $('#content').innerHTML = tableCard(
-      `${state.cache.users.length} user`,
-      `<table><thead><tr><th>User</th><th>Status</th><th>Plan</th><th>Traffic</th><th>Expire</th><th>Devices</th></tr></thead>
-      <tbody>${state.cache.users.map(u => `<tr>
-        <td><strong>${esc(u.username)}</strong><span class="sub">${esc(u.display_name || u.email || '')}</span></td>
-        <td>${status(u.status)}</td>
-        <td>${esc(planByID.get(u.plan_id) || '-')}</td>
-        <td>${fmtBytes(u.traffic_used_bytes)}</td>
-        <td>${fmtDate(u.expires_at)}</td>
-        <td>${esc(u.device_limit || u.entitlements?.device_limit || '-')}</td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    const active = state.cache.users.filter(u => u.status === 'active').length;
+    const totalTraffic = state.cache.users.reduce((sum, u) => sum + Number(u.traffic_used_bytes || 0), 0);
+
+    $('#content').innerHTML = `
+      ${pageHero('SUBSCRIPTIONS', 'کاربران و دسترسی‌ها', 'چرخه عمر کاربر، سهمیه، پلن و مصرف را در یک نمای عملیاتی مدیریت کنید.', [
+        [state.cache.users.length, 'Total users'], [active, 'Active'], [fmtBytes(totalTraffic), 'Traffic']
+      ])}
+      ${filterToolbar('جستجو با نام، ایمیل یا وضعیت...', `${active} active`)}
+      <div class="resource-grid user-grid">
+        ${state.cache.users.map(u => {
+          const limit = Number(u.data_limit_bytes || u.entitlements?.data_limit_bytes || 0);
+          return `<article class="resource-card user-card filterable" data-search="${esc(`${u.username} ${u.display_name || ''} ${u.email || ''} ${u.status}`)}">
+            <div class="resource-card-head">
+              <div class="resource-title">${iconTile((u.username || 'U').slice(0,1).toUpperCase(), u.status)}<div><strong>${esc(u.username)}</strong><small>${esc(u.display_name || u.email || 'GameBridge user')}</small></div></div>
+              ${status(u.status)}
+            </div>
+            <div class="resource-kvs">
+              ${kv('Plan', planByID.get(u.plan_id) || 'No plan')}
+              ${kv('Devices', u.device_limit || u.entitlements?.device_limit || '-')}
+              ${kv('Expires', fmtDate(u.expires_at))}
+            </div>
+            ${usageBar(u.traffic_used_bytes, limit)}
+            ${resourceActions([
+              `<button class="btn small ghost" data-action="user-detail" data-id="${esc(u.id)}">Details</button>`,
+              `<button class="btn small ghost" data-action="edit-user" data-id="${esc(u.id)}">Edit</button>`,
+              `<button class="btn small danger" data-action="delete-user" data-id="${esc(u.id)}">Delete</button>`
+            ])}
+          </article>`;
+        }).join('') || emptyState('کاربری وجود ندارد', 'از + جدید اولین کاربر را بسازید.')}
+      </div>`;
   }
 
   async function renderPlans() {
     state.cache.plans = await api('plans');
-    $('#content').innerHTML = tableCard(
-      `${state.cache.plans.length} plan`,
-      `<table><thead><tr><th>Name</th><th>Data</th><th>Duration</th><th>Devices</th><th>Reset</th><th>Status</th></tr></thead>
-      <tbody>${state.cache.plans.map(p => `<tr>
-        <td><strong>${esc(p.name)}</strong></td>
-        <td>${p.data_limit_bytes ? fmtBytes(p.data_limit_bytes) : 'Unlimited'}</td>
-        <td>${p.duration_days || '-'} days</td>
-        <td>${p.device_limit || '-'}</td>
-        <td>${p.reset_interval_days ? `Every ${p.reset_interval_days} days` : '-'}</td>
-        <td>${status(p.enabled ? 'active' : 'disabled')}</td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    const enabled = state.cache.plans.filter(p => p.enabled).length;
+    $('#content').innerHTML = `
+      ${pageHero('POLICY', 'پلن‌ها و سیاست مصرف', 'پلن‌ها را به‌صورت policy object مدیریت کنید؛ حجم، زمان، device limit و reset.', [
+        [state.cache.plans.length, 'Plans'], [enabled, 'Enabled'], [state.cache.plans.reduce((s,p)=>s+Number(p.device_limit||0),0), 'Device slots']
+      ])}
+      ${filterToolbar('جستجوی پلن...', `${enabled} enabled`)}
+      <div class="resource-grid plan-grid">
+        ${state.cache.plans.map(p => `<article class="resource-card plan-card filterable" data-search="${esc(`${p.name} ${p.enabled ? 'active' : 'disabled'}`)}">
+          <div class="resource-card-head"><div class="resource-title">${iconTile('P', p.enabled ? 'healthy':'disabled')}<div><strong>${esc(p.name)}</strong><small>${p.duration_days || 0} روز</small></div></div>${status(p.enabled ? 'active':'disabled')}</div>
+          <div class="plan-volume"><strong>${p.data_limit_bytes ? fmtBytes(p.data_limit_bytes) : '∞'}</strong><span>Data allowance</span></div>
+          <div class="resource-kvs">${kv('Devices', p.device_limit || 1)}${kv('Reset', p.reset_interval_days ? `${p.reset_interval_days} days` : 'Never')}${kv('Duration', p.duration_days ? `${p.duration_days} days` : 'No limit')}</div>
+          ${resourceActions([
+            `<button class="btn small ghost" data-action="plan-detail" data-id="${esc(p.id)}">Details</button>`,
+            `<button class="btn small ghost" data-action="edit-plan" data-id="${esc(p.id)}">Edit</button>`,
+            `<button class="btn small danger" data-action="delete-plan" data-id="${esc(p.id)}">Delete</button>`
+          ])}
+        </article>`).join('') || emptyState('پلنی وجود ندارد')}
+      </div>`;
   }
 
   async function renderNodes() {
     state.cache.nodes = await api('nodes');
-    $('#content').innerHTML = tableCard(
-      `${state.cache.nodes.length} node`,
-      `<table><thead><tr><th>Node</th><th>Role</th><th>Public IP</th><th>Status</th><th>Load</th><th>RAM</th><th>Core</th><th>Actions</th></tr></thead>
-      <tbody>${state.cache.nodes.map(n => {
-        const ram = n.metrics?.memory_total ? Math.round(100 * (1 - n.metrics.memory_available / n.metrics.memory_total)) : 0;
-        return `<tr>
-          <td><strong>${esc(n.name)}</strong><span class="sub">${esc(n.agent_url || '')}</span></td>
-          <td>${esc(n.role || '-')}</td>
-          <td class="mono">${esc(n.public_ip || '-')}</td>
-          <td>${status(n.status)}</td>
-          <td>${Number(n.metrics?.load_1 || 0).toFixed(2)}</td>
-          <td>${ram ? `${ram}%` : '-'}</td>
-          <td>${esc(n.metrics?.core_version || '-')}</td>
-          <td class="actions">
-            <button class="btn small ghost" data-action="probe-node" data-id="${esc(n.id)}">Probe</button>
-          </td>
-        </tr>`;
-      }).join('')}</tbody></table>`
-    );
+    const online = state.cache.nodes.filter(n => n.status === 'online').length;
+    const maintenance = state.cache.nodes.filter(n => n.maintenance).length;
+    $('#content').innerHTML = `
+      ${pageHero('INFRASTRUCTURE', 'Node Fleet', 'نودهای ایران/خارج، Agent، ظرفیت، maintenance و health را از اینجا کنترل کنید.', [
+        [state.cache.nodes.length, 'Nodes'], [online, 'Online'], [maintenance, 'Maintenance']
+      ])}
+      ${filterToolbar('جستجو با نام، IP، role یا status...', `${online}/${state.cache.nodes.length} online`)}
+      <div class="resource-grid node-grid">
+        ${state.cache.nodes.map(n => {
+          const ram = n.metrics?.memory_total ? Math.round(100 * (1 - n.metrics.memory_available / n.metrics.memory_total)) : 0;
+          const load = Number(n.metrics?.load_1 || 0);
+          return `<article class="resource-card node-card filterable" data-search="${esc(`${n.name} ${n.public_ip || ''} ${n.role || ''} ${n.status}`)}">
+            <div class="resource-card-head">
+              <div class="resource-title">${iconTile('N', n.status)}<div><strong>${esc(n.name)}</strong><small class="mono">${esc(n.public_ip || n.agent_url || '-')}</small></div></div>
+              ${status(n.maintenance ? 'maintenance' : n.status)}
+            </div>
+            <div class="node-gauges">
+              <div><span>RAM</span><strong>${ram}%</strong><div class="usage-track"><i style="width:${ram}%"></i></div></div>
+              <div><span>LOAD</span><strong>${load.toFixed(2)}</strong><div class="usage-track"><i style="width:${Math.min(100, load*25)}%"></i></div></div>
+            </div>
+            <div class="resource-kvs">${kv('Role', n.role || '-')}${kv('Core', n.metrics?.core_version || '-')}${kv('Failures', n.failure_count || 0)}</div>
+            ${resourceActions([
+              `<button class="btn small ghost" data-action="node-detail" data-id="${esc(n.id)}">Details</button>`,
+              `<button class="btn small ghost" data-action="probe-node" data-id="${esc(n.id)}">Probe</button>`,
+              `<button class="btn small ${n.maintenance ? 'ghost':'warn'}" data-action="toggle-maintenance" data-id="${esc(n.id)}" data-enabled="${!!n.maintenance}">${n.maintenance?'Exit maintenance':'Maintenance'}</button>`,
+              `<button class="btn small ${n.enabled ? 'warn':'ghost'}" data-action="toggle-node" data-id="${esc(n.id)}" data-enabled="${!!n.enabled}">${n.enabled?'Disable':'Enable'}</button>`
+            ])}
+          </article>`;
+        }).join('') || emptyState('نودی وجود ندارد')}
+      </div>`;
   }
 
   async function renderInbounds() {
     const [inbounds, nodes] = await Promise.all([api('inbounds'), api('nodes')]);
     state.cache.inbounds = inbounds || [];
     state.cache.nodes = nodes || [];
-    $('#content').innerHTML = tableCard(
-      `${state.cache.inbounds.length} inbound`,
-      `<table><thead><tr><th>Name</th><th>Protocol</th><th>Node</th><th>Listen</th><th>Transport</th><th>Security</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>${state.cache.inbounds.map(x => `<tr>
-        <td><strong>${esc(x.name)}</strong><span class="sub">${esc(x.remark || '')}</span></td>
-        <td>${protocol(x.protocol)}</td>
-        <td>${esc(nodeName(x.node_id))}</td>
-        <td class="mono">${esc(x.listen)}:${esc(x.port)}</td>
-        <td>${esc(x.transport || '-')}</td>
-        <td>${esc(x.tls_mode || 'none')}</td>
-        <td>${status(x.enabled ? (x.status || 'configured') : 'disabled')}</td>
-        <td class="actions">
-          <button class="btn small ghost" data-action="inbound-detail" data-id="${esc(x.id)}">Details</button>
-          <button class="btn small ghost" data-action="redeploy-inbound" data-id="${esc(x.id)}">Deploy</button>
-          <button class="btn small ${x.enabled ? 'warn' : 'ghost'}" data-action="toggle-inbound" data-id="${esc(x.id)}" data-enabled="${x.enabled}">${x.enabled ? 'Disable' : 'Enable'}</button>
-          <button class="btn small danger" data-action="delete-inbound" data-id="${esc(x.id)}">Delete</button>
-        </td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    const enabled = state.cache.inbounds.filter(x => x.enabled).length;
+    $('#content').innerHTML = `
+      ${pageHero('INGRESS', 'Inbound Gateway', 'ورودی‌های Xray را با transport، TLS/REALITY و binding کاربران به‌صورت اختصاصی مدیریت کنید.', [
+        [state.cache.inbounds.length, 'Listeners'], [enabled, 'Enabled'], [new Set(state.cache.inbounds.map(x=>x.node_id)).size, 'Nodes']
+      ])}
+      ${filterToolbar('جستجو با name، protocol، node، port...', `${enabled} enabled`)}
+      <div class="resource-grid inbound-grid">
+        ${state.cache.inbounds.map(x => `<article class="resource-card inbound-card filterable" data-search="${esc(`${x.name} ${x.protocol} ${nodeName(x.node_id)} ${x.port} ${x.tls_mode}`)}">
+          <div class="resource-card-head">
+            <div class="resource-title">${iconTile('⇢', x.enabled ? 'healthy':'disabled')}<div><strong>${esc(x.name)}</strong><small>${protocol(x.protocol)} ${esc(x.transport || 'tcp')}</small></div></div>
+            ${status(x.enabled ? (x.status || 'configured'):'disabled')}
+          </div>
+          <div class="endpoint-box"><span>LISTEN</span><strong class="mono">${esc(x.listen)}:${esc(x.port)}</strong></div>
+          <div class="resource-kvs">${kv('Node', nodeName(x.node_id))}${kv('Security', (x.tls_mode || 'none').toUpperCase())}${kv('Transport', x.transport || 'tcp')}</div>
+          ${resourceActions([
+            `<button class="btn small ghost" data-action="inbound-detail" data-id="${esc(x.id)}">Details</button>`,
+            `<button class="btn small ghost" data-action="edit-inbound" data-id="${esc(x.id)}">Edit</button>`,
+            `<button class="btn small ghost" data-action="redeploy-inbound" data-id="${esc(x.id)}">Deploy</button>`,
+            `<button class="btn small ${x.enabled ? 'warn':'ghost'}" data-action="toggle-inbound" data-id="${esc(x.id)}" data-enabled="${x.enabled}">${x.enabled?'Disable':'Enable'}</button>`
+          ])}
+        </article>`).join('') || emptyState('Inbound تعریف نشده است')}
+      </div>`;
   }
 
   async function renderOutbounds() {
     const [outbounds, nodes] = await Promise.all([api('outbounds'), api('nodes')]);
     state.cache.outbounds = outbounds || [];
     state.cache.nodes = nodes || [];
-    $('#content').innerHTML = tableCard(
-      `${state.cache.outbounds.length} outbound`,
-      `<table><thead><tr><th>Name</th><th>Protocol</th><th>Node</th><th>Target</th><th>Health</th><th>Latency</th><th>Actions</th></tr></thead>
-      <tbody>${state.cache.outbounds.map(x => `<tr>
-        <td><strong>${esc(x.name)}</strong><span class="sub">${esc(x.tag)}${x.remark ? ` · ${esc(x.remark)}` : ''}</span></td>
-        <td>${protocol(x.protocol)}</td>
-        <td>${esc(nodeName(x.node_id))}</td>
-        <td class="mono">${esc(outboundTarget(x))}</td>
-        <td>${status(x.enabled ? (x.health_status || 'unknown') : 'disabled')}</td>
-        <td>${latency(x.health_latency_ms)}</td>
-        <td class="actions">
-          <button class="btn small ghost" data-action="outbound-detail" data-id="${esc(x.id)}">Details</button>
-          <button class="btn small ghost" data-action="probe-outbound" data-id="${esc(x.id)}">Probe</button>
-          <button class="btn small ghost" data-action="redeploy-outbound" data-id="${esc(x.id)}">Deploy</button>
-          <button class="btn small ${x.enabled ? 'warn' : 'ghost'}" data-action="toggle-outbound" data-id="${esc(x.id)}" data-enabled="${x.enabled}">${x.enabled ? 'Disable' : 'Enable'}</button>
-          <button class="btn small danger" data-action="delete-outbound" data-id="${esc(x.id)}">Delete</button>
-        </td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    const enabled = state.cache.outbounds.filter(x => x.enabled).length;
+    const healthy = state.cache.outbounds.filter(x => x.enabled && x.health_status === 'healthy').length;
+    const unhealthy = state.cache.outbounds.filter(x => x.enabled && x.health_status === 'unhealthy').length;
+    $('#content').innerHTML = `
+      ${pageHero('EGRESS', 'Outbound Control Center', 'خروجی‌های Native و Xray را با health probe، latency و deployment از یک مرکز مدیریت کنید.', [
+        [state.cache.outbounds.length, 'Outbounds'], [healthy, 'Healthy'], [unhealthy, 'Unhealthy']
+      ], '<button class="btn ghost" data-action="probe-all-outbounds">Probe all</button>')}
+      ${filterToolbar('جستجو با name، tag، protocol، node...', `${healthy}/${enabled} healthy`)}
+      <div class="resource-grid outbound-grid">
+        ${state.cache.outbounds.map(x => `<article class="resource-card outbound-card filterable ${safeStatus(x.health_status)}" data-search="${esc(`${x.name} ${x.tag} ${x.protocol} ${nodeName(x.node_id)} ${x.health_status}`)}">
+          <div class="resource-card-head">
+            <div class="resource-title">${iconTile((x.protocol || '?').slice(0,1).toUpperCase(), x.health_status)}<div><strong>${esc(x.name)}</strong><small class="mono">${esc(x.tag)}</small></div></div>
+            ${status(x.enabled ? (x.health_status || 'unknown') : 'disabled')}
+          </div>
+          <div class="outbound-protocol-line">${protocol(x.protocol)}<span>${latency(x.health_latency_ms)}</span></div>
+          <div class="endpoint-box"><span>TARGET</span><strong class="mono">${esc(outboundTarget(x))}</strong></div>
+          <div class="resource-kvs">${kv('Node', nodeName(x.node_id))}${kv('Failures', x.health_failure_count || 0)}${kv('Checked', fmtDate(x.health_last_checked_at))}</div>
+          ${resourceActions([
+            `<button class="btn small ghost" data-action="outbound-detail" data-id="${esc(x.id)}">Health</button>`,
+            `<button class="btn small ghost" data-action="edit-outbound" data-id="${esc(x.id)}">Edit</button>`,
+            `<button class="btn small ghost" data-action="probe-outbound" data-id="${esc(x.id)}">Probe</button>`,
+            `<button class="btn small ${x.enabled ? 'warn':'ghost'}" data-action="toggle-outbound" data-id="${esc(x.id)}" data-enabled="${x.enabled}">${x.enabled?'Disable':'Enable'}</button>`
+          ])}
+        </article>`).join('') || emptyState('Outbound تعریف نشده است')}
+      </div>`;
   }
 
   function outboundTarget(x) {
@@ -480,126 +592,139 @@
   }
 
   async function renderGroups() {
-    const [groups, nodes, outbounds] = await Promise.all([
-      api('outbound-groups'), api('nodes'), api('outbounds')
-    ]);
+    const [groups, nodes, outbounds] = await Promise.all([api('outbound-groups'), api('nodes'), api('outbounds')]);
     state.cache.groups = groups || [];
     state.cache.nodes = nodes || [];
     state.cache.outbounds = outbounds || [];
-
-    $('#content').innerHTML = tableCard(
-      `${state.cache.groups.length} group`,
-      `<table><thead><tr><th>Name</th><th>Node</th><th>Strategy</th><th>Members</th><th>Fallback</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>${state.cache.groups.map(g => `<tr>
-        <td><strong>${esc(g.name)}</strong></td>
-        <td>${esc(nodeName(g.node_id))}</td>
-        <td>${protocol(g.strategy)}</td>
-        <td>${esc((g.members || []).length)}</td>
-        <td>${esc(outboundName(g.fallback_outbound_id || 'blocked'))}</td>
-        <td>${status(g.enabled ? 'active' : 'disabled')}</td>
-        <td class="actions">
-          <button class="btn small ghost" data-action="group-detail" data-id="${esc(g.id)}">Details</button>
-          <button class="btn small danger" data-action="delete-group" data-id="${esc(g.id)}">Delete</button>
-        </td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    $('#content').innerHTML = `
+      ${pageHero('RESILIENCE', 'Failover & Load Balancing', 'گروه‌های خروجی را با priority، weight، fallback و strategyهای Xray مدیریت کنید.', [
+        [state.cache.groups.length, 'Groups'],
+        [state.cache.groups.reduce((s,g)=>s+(g.members||[]).length,0), 'Members'],
+        [state.cache.groups.filter(g=>g.enabled).length, 'Enabled']
+      ])}
+      ${filterToolbar('جستجوی group، strategy، node...', `${state.cache.groups.length} groups`)}
+      <div class="group-grid">
+        ${state.cache.groups.map(g => {
+          const members = (g.members || []).map(m => state.cache.outbounds.find(o=>o.id===m.outbound_id)).filter(Boolean);
+          return `<article class="failover-card filterable" data-search="${esc(`${g.name} ${g.strategy} ${nodeName(g.node_id)}`)}">
+            <div class="failover-head"><div><span class="eyebrow">${esc((g.strategy || '').toUpperCase())}</span><h3>${esc(g.name)}</h3><p>${esc(nodeName(g.node_id))}</p></div>${status(g.enabled?'active':'disabled')}</div>
+            <div class="failover-flow">
+              <div class="flow-source">ROUTE</div><i>→</i><div class="flow-balancer">GB<span>${esc(g.expected || 1)}</span></div><i>→</i>
+              <div class="flow-members">${members.slice(0,4).map(o=>`<span class="${safeStatus(o.health_status)}" title="${esc(o.name)}">${esc((o.protocol||'?').slice(0,1).toUpperCase())}</span>`).join('') || '<span>?</span>'}</div>
+              <i>→</i><div class="flow-fallback">${esc(outboundName(g.fallback_outbound_id || 'blocked'))}</div>
+            </div>
+            <div class="resource-kvs">${kv('Members',(g.members||[]).length)}${kv('Expected',g.expected||1)}${kv('Fallback',outboundName(g.fallback_outbound_id||'blocked'))}</div>
+            ${resourceActions([
+              `<button class="btn small ghost" data-action="group-detail" data-id="${esc(g.id)}">Topology</button>`,
+              `<button class="btn small ghost" data-action="edit-group" data-id="${esc(g.id)}">Edit</button>`,
+              `<button class="btn small danger" data-action="delete-group" data-id="${esc(g.id)}">Delete</button>`
+            ])}
+          </article>`;
+        }).join('') || emptyState('Failover Group وجود ندارد')}
+      </div>`;
   }
 
   async function renderRouting() {
     await loadCore();
-    $('#content').innerHTML = tableCard(
-      `${state.cache.routing.length} rule`,
-      `<table><thead><tr><th>Priority</th><th>Name</th><th>Node</th><th>Match</th><th>Target</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>${state.cache.routing.map(r => {
-        const target = r.outbound_group_id ? `Group · ${groupName(r.outbound_group_id)}` : outboundName(r.outbound_id);
-        const match = [
-          r.inbound_ids?.length ? `${r.inbound_ids.length} inbound` : '',
-          r.user_ids?.length ? `${r.user_ids.length} user` : '',
-          r.domains?.length ? `${r.domains.length} domain` : '',
-          r.ips?.length ? `${r.ips.length} IP` : '',
-          r.ports ? `ports ${r.ports}` : ''
-        ].filter(Boolean).join(' · ') || 'Any';
-        return `<tr>
-          <td>${esc(r.priority)}</td>
-          <td><strong>${esc(r.name)}</strong></td>
-          <td>${esc(nodeName(r.node_id))}</td>
-          <td>${esc(match)}</td>
-          <td>${esc(target)}</td>
-          <td>${status(r.enabled ? 'active' : 'disabled')}</td>
-          <td class="actions"><button class="btn small danger" data-action="delete-routing" data-id="${esc(r.id)}">Delete</button></td>
-        </tr>`;
-      }).join('')}</tbody></table>`
-    );
+    const enabled = state.cache.routing.filter(r=>r.enabled).length;
+    $('#content').innerHTML = `
+      ${pageHero('POLICY ROUTING', 'Routing Rules', 'قوانین را بر اساس inbound، user، domain، IP، port و protocol به egress یا failover group وصل کنید.', [
+        [state.cache.routing.length, 'Rules'], [enabled, 'Enabled'], [state.cache.groups.length, 'Group targets']
+      ])}
+      ${filterToolbar('جستجو با rule، target، node یا match...', `${enabled} enabled`)}
+      <div class="routing-stack">
+        ${state.cache.routing.map(r => {
+          const target = r.outbound_group_id ? `Group · ${groupName(r.outbound_group_id)}` : outboundName(r.outbound_id);
+          const chips = [
+            ...(r.inbound_ids||[]).map(()=> 'Inbound'),
+            ...(r.user_ids||[]).map(()=> 'User'),
+            ...(r.domains||[]).slice(0,2),
+            ...(r.ips||[]).slice(0,2),
+            r.ports ? `Ports ${r.ports}` : '',
+            r.network || ''
+          ].filter(Boolean);
+          return `<article class="route-card filterable" data-search="${esc(`${r.name} ${target} ${nodeName(r.node_id)} ${chips.join(' ')}`)}">
+            <div class="route-priority">${esc(r.priority)}</div>
+            <div class="route-main"><div class="route-head"><div><strong>${esc(r.name)}</strong><small>${esc(nodeName(r.node_id))}</small></div>${status(r.enabled?'active':'disabled')}</div>
+              <div class="match-chips">${chips.map(c=>`<span>${esc(c)}</span>`).join('') || '<span>Any traffic</span>'}</div>
+            </div>
+            <div class="route-arrow">→</div>
+            <div class="route-target"><span>${r.outbound_group_id?'FAILOVER':'OUTBOUND'}</span><strong>${esc(target)}</strong></div>
+            ${resourceActions([
+              `<button class="btn small ghost" data-action="routing-detail" data-id="${esc(r.id)}">Details</button>`,
+              `<button class="btn small ghost" data-action="edit-routing" data-id="${esc(r.id)}">Edit</button>`,
+              `<button class="btn small danger" data-action="delete-routing" data-id="${esc(r.id)}">Delete</button>`
+            ])}
+          </article>`;
+        }).join('') || emptyState('Routing Rule وجود ندارد')}
+      </div>`;
   }
 
   async function renderOnline() {
     const rows = await api('online-users');
-    $('#content').innerHTML = tableCard(
-      `${rows.length} online`,
-      `<table><thead><tr><th>User</th><th>Status</th><th>Total</th><th>Xray</th><th>WireGuard</th><th>Last Activity</th></tr></thead>
-      <tbody>${rows.map(u => `<tr>
-        <td><strong>${esc(u.username)}</strong></td>
-        <td>${status(u.status)}</td>
-        <td>${fmtBytes(u.traffic_bytes)}</td>
-        <td>${fmtBytes(u.xray_bytes)}</td>
-        <td>${fmtBytes(u.wireguard_bytes)}</td>
-        <td>${fmtDate(u.last_online_at)}</td>
-      </tr>`).join('')}</tbody></table>`,
-      '<button class="btn small ghost" data-action="sync-traffic">Sync Traffic</button>'
-    );
+    const total = rows.reduce((s,u)=>s+Number(u.traffic_bytes||0),0);
+    $('#content').innerHTML = `
+      ${pageHero('LIVE SESSIONS', 'Online Users', 'کاربران فعال و آخرین فعالیت ثبت‌شده در مسیرهای Xray و WireGuard.', [
+        [rows.length,'Online'], [fmtBytes(total),'Traffic'], [rows.filter(x=>x.status==='active').length,'Active']
+      ], '<button class="btn ghost" data-action="sync-traffic">Sync Traffic</button>')}
+      ${filterToolbar('جستجوی کاربر...', `${rows.length} online`)}
+      <div class="live-user-grid">
+        ${rows.map(u=>`<article class="live-user filterable" data-search="${esc(`${u.username} ${u.status}`)}">
+          <div class="live-user-head">${iconTile((u.username||'U').slice(0,1).toUpperCase(),u.status)}<div><strong>${esc(u.username)}</strong><small>${fmtDate(u.last_online_at)}</small></div>${status(u.status)}</div>
+          <div class="traffic-split"><div><span>Xray</span><strong>${fmtBytes(u.xray_bytes)}</strong></div><div><span>WireGuard</span><strong>${fmtBytes(u.wireguard_bytes)}</strong></div><div><span>Total</span><strong>${fmtBytes(u.traffic_bytes)}</strong></div></div>
+        </article>`).join('') || emptyState('کاربر آنلاین نیست')}
+      </div>`;
   }
 
   async function renderTraffic() {
     const rows = await api('traffic');
-    $('#content').innerHTML = tableCard(
-      `${rows.length} account`,
-      `<table><thead><tr><th>User</th><th>Status</th><th>Total</th><th>Xray</th><th>WireGuard</th><th>Limit</th><th>Next Reset</th></tr></thead>
-      <tbody>${rows.map(u => `<tr>
-        <td><strong>${esc(u.username)}</strong></td>
-        <td>${status(u.status)}</td>
-        <td>${fmtBytes(u.traffic_bytes)}</td>
-        <td>${fmtBytes(u.xray_bytes)}</td>
-        <td>${fmtBytes(u.wireguard_bytes)}</td>
-        <td>${u.limit_bytes ? fmtBytes(u.limit_bytes) : 'Unlimited'}</td>
-        <td>${fmtDate(u.next_reset_at)}</td>
-      </tr>`).join('')}</tbody></table>`,
-      '<button class="btn small ghost" data-action="sync-traffic">Sync Traffic</button>'
-    );
+    const total = rows.reduce((s,u)=>s+Number(u.traffic_bytes||0),0);
+    $('#content').innerHTML = `
+      ${pageHero('ACCOUNTING', 'Traffic Analytics', 'مصرف تجمیعی کاربران، سهم Xray/WireGuard و زمان reset بعدی.', [
+        [rows.length,'Accounts'], [fmtBytes(total),'Total traffic'], [rows.filter(x=>Number(x.limit_bytes||0)>0).length,'Quota controlled']
+      ], '<button class="btn ghost" data-action="sync-traffic">Sync now</button>')}
+      ${filterToolbar('جستجوی user یا status...', `${fmtBytes(total)} total`)}
+      <div class="traffic-list">
+        ${rows.map(u => `<article class="traffic-card filterable" data-search="${esc(`${u.username} ${u.status}`)}">
+          <div class="traffic-user"><div>${iconTile((u.username||'U').slice(0,1).toUpperCase(),u.status)}<span><strong>${esc(u.username)}</strong><small>${status(u.status)}</small></span></div><strong>${fmtBytes(u.traffic_bytes)}</strong></div>
+          ${usageBar(u.traffic_bytes,u.limit_bytes)}
+          <div class="traffic-breakdown"><span>Xray <b>${fmtBytes(u.xray_bytes)}</b></span><span>WireGuard <b>${fmtBytes(u.wireguard_bytes)}</b></span><span>Reset <b>${fmtDate(u.next_reset_at)}</b></span></div>
+        </article>`).join('') || emptyState('داده‌ای وجود ندارد')}
+      </div>`;
   }
 
   async function renderTunnels() {
     const [tunnels, nodes] = await Promise.all([api('tunnels'), api('nodes')]);
     state.cache.tunnels = tunnels || [];
     state.cache.nodes = nodes || [];
-    $('#content').innerHTML = tableCard(
-      `${state.cache.tunnels.length} tunnel`,
-      `<table><thead><tr><th>Name</th><th>Transport</th><th>Source</th><th>Destination</th><th>Profile</th><th>MTU</th><th>Status</th></tr></thead>
-      <tbody>${state.cache.tunnels.map(t => `<tr>
-        <td><strong>${esc(t.name)}</strong><span class="sub">${esc(t.cidr || '')}</span></td>
-        <td>${protocol(t.transport)}</td>
-        <td>${esc(nodeName(t.source_node_id))}</td>
-        <td>${esc(nodeName(t.destination_node_id))}</td>
-        <td>${esc(t.profile || '-')}</td>
-        <td>${esc(t.mtu || '-')}</td>
-        <td>${status(t.status)}</td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    $('#content').innerHTML = `
+      ${pageHero('BACKBONE', 'GameBridge Tunnels', 'مسیرهای Server-to-Server را به‌صورت توپولوژی source → destination ببینید.', [
+        [state.cache.tunnels.length,'Tunnels'], [state.cache.tunnels.filter(t=>['online','created'].includes(t.status)).length,'Active'], [state.cache.nodes.length,'Nodes']
+      ])}
+      ${filterToolbar('جستجو با tunnel، node یا transport...', `${state.cache.tunnels.length} tunnels`)}
+      <div class="tunnel-grid">
+        ${state.cache.tunnels.map(t=>`<article class="tunnel-card filterable" data-search="${esc(`${t.name} ${t.transport} ${nodeName(t.source_node_id)} ${nodeName(t.destination_node_id)} ${t.status}`)}">
+          <div class="tunnel-head"><div><strong>${esc(t.name)}</strong><small>${protocol(t.transport)} · ${esc(t.profile||'-')}</small></div>${status(t.status)}</div>
+          <div class="tunnel-path"><div><span>SOURCE</span><strong>${esc(nodeName(t.source_node_id))}</strong></div><i>⟶</i><div><span>DESTINATION</span><strong>${esc(nodeName(t.destination_node_id))}</strong></div></div>
+          <div class="resource-kvs">${kv('CIDR',t.cidr||'-')}${kv('MTU',t.mtu||'-')}${kv('Ports',(t.ports||[]).length||'-')}</div>
+        </article>`).join('') || emptyState('Tunnel وجود ندارد')}
+      </div>`;
   }
 
   async function renderForwards() {
     const [rows, nodes] = await Promise.all([api('forwards'), api('nodes')]);
     state.cache.nodes = nodes || [];
-    $('#content').innerHTML = tableCard(
-      `${rows.length} forward`,
-      `<table><thead><tr><th>Node</th><th>Protocol</th><th>Listen</th><th>Destination</th><th>Status</th></tr></thead>
-      <tbody>${rows.map(f => `<tr>
-        <td>${esc(nodeName(f.node_id))}</td>
-        <td>${protocol(f.protocol)}</td>
-        <td class="mono">${esc(f.listen_port)}</td>
-        <td class="mono">${esc(f.dest_ip)}:${esc(f.dest_port)}</td>
-        <td>${status(f.enabled === false ? 'disabled' : 'active')}</td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    $('#content').innerHTML = `
+      ${pageHero('FORWARDING', 'Port Forward', 'Forwardهای TCP/UDP را با مسیر ورودی و مقصد در یک نمای ساده بررسی کنید.', [
+        [rows.length,'Rules'], [rows.filter(f=>f.enabled!==false).length,'Active'], [new Set(rows.map(f=>f.node_id)).size,'Nodes']
+      ])}
+      ${filterToolbar('جستجو با node، protocol یا destination...', `${rows.length} forwards`)}
+      <div class="forward-grid">
+        ${rows.map(f=>`<article class="forward-card filterable" data-search="${esc(`${nodeName(f.node_id)} ${f.protocol} ${f.dest_ip} ${f.dest_port}`)}">
+          <div>${iconTile('↪', f.enabled===false?'disabled':'healthy')}<span><strong>${esc(nodeName(f.node_id))}</strong><small>${protocol(f.protocol)}</small></span>${status(f.enabled===false?'disabled':'active')}</div>
+          <div class="forward-path"><strong class="mono">:${esc(f.listen_port)}</strong><i>→</i><strong class="mono">${esc(f.dest_ip)}:${esc(f.dest_port)}</strong></div>
+        </article>`).join('') || emptyState('Port Forward وجود ندارد')}
+      </div>`;
   }
 
   async function renderLogs() {
@@ -618,17 +743,17 @@
 
   async function renderAudit() {
     const rows = await api('audit');
-    $('#content').innerHTML = tableCard(
-      `${rows.length} event`,
-      `<table><thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Object</th><th>IP</th></tr></thead>
-      <tbody>${rows.map(x => `<tr>
-        <td>${fmtDate(x.created_at)}</td>
-        <td>${esc(x.admin_name || '-')}</td>
-        <td>${protocol(x.action)}</td>
-        <td>${esc(x.object || '-')}</td>
-        <td class="mono">${esc(x.remote_ip || '-')}</td>
-      </tr>`).join('')}</tbody></table>`
-    );
+    $('#content').innerHTML = `
+      ${pageHero('GOVERNANCE', 'Audit Timeline', 'تمام تغییرات مدیریتی، actor، object و IP را به‌صورت timeline مشاهده کنید.', [
+        [rows.length,'Events'], [new Set(rows.map(x=>x.admin_name).filter(Boolean)).size,'Admins'], [new Set(rows.map(x=>x.action).filter(Boolean)).size,'Actions']
+      ])}
+      ${filterToolbar('جستجو در action، object، admin یا IP...', `${rows.length} events`)}
+      <div class="audit-timeline">
+        ${rows.map(x=>`<article class="audit-event filterable" data-search="${esc(`${x.admin_name} ${x.action} ${x.object} ${x.remote_ip}`)}">
+          <span class="audit-dot"></span><div class="audit-time">${esc(fmtDate(x.created_at))}</div>
+          <div class="audit-body"><div><strong>${esc(x.admin_name||'-')}</strong>${protocol(x.action)}</div><p>${esc(x.object||'-')}</p><small class="mono">${esc(x.remote_ip||'-')}</small></div>
+        </article>`).join('') || emptyState('Audit event وجود ندارد')}
+      </div>`;
   }
 
   async function renderAdmins() {
@@ -985,6 +1110,16 @@
     return Number.isFinite(n) ? n : fallback;
   }
 
+  function setInput(selector, value) {
+    const el = $(selector);
+    if (el) el.value = value ?? '';
+  }
+
+  function setChecked(selector, value) {
+    const el = $(selector);
+    if (el) el.checked = Boolean(value);
+  }
+
   function csv(value) {
     return String(value || '').split(',').map(x => x.trim()).filter(Boolean);
   }
@@ -1198,6 +1333,258 @@
       </tr>`).join('')}</tbody></table></div></div>`, 'FAILOVER');
   }
 
+
+  async function showUserDetail(id) {
+    const d = await api(`users/${id}`);
+    const u = d.user || d;
+    const ent = d.entitlements || {};
+    modal(u.username || 'User', `
+      <div class="detail-banner"><div>${iconTile((u.username||'U').slice(0,1).toUpperCase(),u.status)}<span><strong>${esc(u.username)}</strong><small>${esc(u.display_name||u.email||'')}</small></span></div>${status(u.status)}</div>
+      <div class="grid three-col detail-metrics">${metricCard('Traffic',fmtBytes(u.traffic_used_bytes),'Consumed','↕')}${metricCard('Devices',u.device_limit||ent.device_limit||'-','Allowed','◎')}${metricCard('Expires',fmtDate(u.expires_at),'Lifecycle','◷')}</div>
+      <div class="card"><div class="resource-kvs">${kv('Plan',u.plan_id||'-')}${kv('Email',u.email||'-')}${kv('Reset',fmtDate(u.next_traffic_reset_at))}</div></div>`, 'USER PROFILE');
+  }
+
+  async function openUserEdit(id) {
+    const d = await api(`users/${id}`);
+    const u = d.user || d;
+    state.cache.plans = await api('plans');
+    modal('ویرایش کاربر', `<div class="form-grid">
+      <label class="field"><span>Username</span><input id="edit-user-name" value="${esc(u.username||'')}"></label>
+      <label class="field"><span>Display name</span><input id="edit-user-display" value="${esc(u.display_name||'')}"></label>
+      <label class="field"><span>Email</span><input id="edit-user-email" value="${esc(u.email||'')}"></label>
+      <label class="field"><span>Plan</span><select id="edit-user-plan">${planOptions(u.plan_id||'')}</select></label>
+      <label class="field"><span>Data limit bytes</span><input id="edit-user-data" type="number" value="${Number(u.data_limit_bytes||0)}"></label>
+      <label class="field"><span>Device limit</span><input id="edit-user-devices" type="number" value="${Number(u.device_limit||1)}"></label>
+      <label class="field"><span>Reset days</span><input id="edit-user-reset" type="number" value="${Number(u.reset_interval_days||0)}"></label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-user" data-id="${esc(id)}">Save User</button></div>
+    </div>`, 'USER POLICY');
+  }
+
+  async function saveUser(id) {
+    await api(`users/${id}`, {method:'PUT', body:{
+      username: val('#edit-user-name').trim(), display_name: val('#edit-user-display').trim(), email: val('#edit-user-email').trim(),
+      plan_id: val('#edit-user-plan'), data_limit_bytes: num('#edit-user-data'), device_limit: num('#edit-user-devices',1),
+      reset_interval_days: num('#edit-user-reset')
+    }});
+    closeModal(); toast('User بروزرسانی شد'); navigate('users');
+  }
+
+  async function showPlanDetail(id) {
+    const d = await api(`plans/${id}`);
+    const p = d.plan || d;
+    modal(p.name || 'Plan', `<div class="grid three-col detail-metrics">${metricCard('Users',d.assigned_users||0,'Assigned','◎')}${metricCard('Data',p.data_limit_bytes?fmtBytes(p.data_limit_bytes):'∞','Allowance','↕')}${metricCard('Devices',p.device_limit||1,'Per user','▣')}</div>
+      <div class="card"><div class="resource-kvs">${kv('Duration',p.duration_days?`${p.duration_days} days`:'Unlimited')}${kv('Reset',p.reset_interval_days?`${p.reset_interval_days} days`:'Never')}${kv('Status',p.enabled?'Enabled':'Disabled')}</div></div>`, 'PLAN');
+  }
+
+  async function openPlanEdit(id) {
+    const d = await api(`plans/${id}`); const p = d.plan || d;
+    modal('ویرایش پلن', `<div class="form-grid">
+      <label class="field"><span>Name</span><input id="edit-plan-name" value="${esc(p.name||'')}"></label>
+      <label class="field"><span>Data bytes</span><input id="edit-plan-data" type="number" value="${Number(p.data_limit_bytes||0)}"></label>
+      <label class="field"><span>Duration days</span><input id="edit-plan-days" type="number" value="${Number(p.duration_days||0)}"></label>
+      <label class="field"><span>Device limit</span><input id="edit-plan-devices" type="number" value="${Number(p.device_limit||1)}"></label>
+      <label class="field"><span>Reset days</span><input id="edit-plan-reset" type="number" value="${Number(p.reset_interval_days||0)}"></label>
+      <label class="check-row"><input id="edit-plan-enabled" type="checkbox" ${p.enabled?'checked':''}> Enabled</label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-plan" data-id="${esc(id)}">Save Plan</button></div>
+    </div>`, 'PLAN POLICY');
+  }
+
+  async function savePlan(id) {
+    await api(`plans/${id}`, {method:'PUT', body:{
+      name:val('#edit-plan-name').trim(), data_limit_bytes:num('#edit-plan-data'), duration_days:num('#edit-plan-days'),
+      device_limit:num('#edit-plan-devices',1), reset_interval_days:num('#edit-plan-reset'), enabled:$('#edit-plan-enabled').checked
+    }});
+    closeModal(); toast('Plan بروزرسانی شد'); navigate('plans');
+  }
+
+  async function showNodeDetail(id) {
+    const [d,m] = await Promise.all([api(`nodes/${id}`),api(`nodes/${id}/metrics`)]);
+    const n=d.node||d;
+    modal(n.name||'Node', `<div class="detail-banner"><div>${iconTile('N',n.status)}<span><strong>${esc(n.name)}</strong><small class="mono">${esc(n.public_ip||n.agent_url||'-')}</small></span></div>${status(n.maintenance?'maintenance':n.status)}</div>
+      <div class="grid three-col detail-metrics">${metricCard('Load',Number(m.metrics?.load_1||0).toFixed(2),'1 minute','↯')}${metricCard('Failures',m.failure_count||0,'Probe failures','!')}${metricCard('Last seen',fmtDate(m.last_seen),'Agent heartbeat','◷')}</div>
+      <div class="card"><div class="resource-kvs">${kv('Role',n.role||'-')}${kv('Interface',n.internet_interface||'-')}${kv('Agent URL',n.agent_url||'-')}${kv('Last error',m.last_error||'-')}</div></div>`, 'NODE');
+  }
+
+  async function openInboundEdit(id) {
+    const d = await api(`inbounds/${id}`); const x=d.inbound||d;
+    modal('ویرایش Inbound', `<div class="form-grid">
+      <label class="field"><span>Name</span><input id="ei-name" value="${esc(x.name||'')}"></label>
+      <label class="field"><span>Node ID</span><input id="ei-node" value="${esc(x.node_id||'')}"></label>
+      <label class="field"><span>Protocol</span><input id="ei-protocol" value="${esc(x.protocol||'')}"></label>
+      <label class="field"><span>Listen</span><input id="ei-listen" value="${esc(x.listen||'0.0.0.0')}"></label>
+      <label class="field"><span>Port</span><input id="ei-port" type="number" value="${Number(x.port||443)}"></label>
+      <label class="field"><span>Transport</span><input id="ei-transport" value="${esc(x.transport||'tcp')}"></label>
+      <label class="field"><span>Security</span><input id="ei-tls" value="${esc(x.tls_mode||'none')}"></label>
+      <label class="field"><span>Server name</span><input id="ei-server" value="${esc(x.server_name||'')}"></label>
+      <label class="field"><span>Path</span><input id="ei-path" value="${esc(x.path||'/')}"></label>
+      <label class="field"><span>Host</span><input id="ei-host" value="${esc(x.host||'')}"></label>
+      <label class="field"><span>gRPC service</span><input id="ei-service" value="${esc(x.service_name||'gamebridge')}"></label>
+      <label class="field"><span>TLS certificate</span><input id="ei-cert" value="${esc(x.cert_file||'')}"></label>
+      <label class="field"><span>TLS key</span><input id="ei-key" value="${esc(x.key_file||'')}"></label>
+      <label class="field"><span>REALITY destination</span><input id="ei-rdest" value="${esc(x.reality_dest||'')}"></label>
+      <label class="field"><span>REALITY server names</span><input id="ei-rnames" value="${esc((x.reality_server_names||[]).join(','))}"></label>
+      <label class="field"><span>REALITY short IDs</span><input id="ei-rids" value="${esc((x.reality_short_ids||[]).join(','))}"></label>
+      <label class="field"><span>Fingerprint</span><input id="ei-fp" value="${esc(x.reality_fingerprint||'chrome')}"></label>
+      <label class="field"><span>Shadowsocks method</span><input id="ei-ss" value="${esc(x.shadowsocks_method||'aes-128-gcm')}"></label>
+      <label class="field span-2"><span>Remark</span><input id="ei-remark" value="${esc(x.remark||'')}"></label>
+      <label class="check-row"><input id="ei-enabled" type="checkbox" ${x.enabled?'checked':''}> Enabled</label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-inbound" data-id="${esc(id)}">Save + Deploy</button></div>
+    </div>`, 'INGRESS');
+  }
+
+  async function saveInbound(id) {
+    await api(`inbounds/${id}`, {method:'PUT', body:{
+      name:val('#ei-name').trim(), node_id:val('#ei-node').trim(), protocol:val('#ei-protocol').trim(),
+      listen:val('#ei-listen').trim(), port:num('#ei-port'), transport:val('#ei-transport').trim(), tls_mode:val('#ei-tls').trim(),
+      enabled:$('#ei-enabled').checked, server_name:val('#ei-server').trim(), path:val('#ei-path').trim(), host:val('#ei-host').trim(),
+      service_name:val('#ei-service').trim(), cert_file:val('#ei-cert').trim(), key_file:val('#ei-key').trim(),
+      reality_dest:val('#ei-rdest').trim(), reality_server_names:csv(val('#ei-rnames')), reality_short_ids:csv(val('#ei-rids')),
+      reality_fingerprint:val('#ei-fp').trim() || 'chrome', shadowsocks_method:val('#ei-ss').trim() || 'aes-128-gcm', remark:val('#ei-remark').trim()
+    }});
+    closeModal(); toast('Inbound بروزرسانی و deploy شد'); navigate('inbounds');
+  }
+
+
+  async function openOutboundEdit(id) {
+    const [x, nodes] = await Promise.all([api(`outbounds/${id}`), api('nodes')]);
+    state.cache.nodes = nodes || [];
+    modal('ویرایش Outbound', `<div class="form-grid">
+      <label class="field"><span>Name</span><input id="out-name" value="${esc(x.name||'')}"></label>
+      <label class="field"><span>Node</span><select id="out-node">${nodeOptions(x.node_id)}</select></label>
+      <label class="field"><span>Tag</span><input id="out-tag" value="${esc(x.tag||'')}"></label>
+      <label class="field"><span>Protocol</span><select id="out-protocol" data-role="outbound-protocol">
+        ${['vless','vmess','trojan','shadowsocks','socks','http','wireguard','tor','openvpn','custom','freedom','blackhole'].map(p=>`<option value="${p}" ${p===x.protocol?'selected':''}>${p}</option>`).join('')}
+      </select></label>
+      <div id="outbound-fields" class="form-section"></div>
+      <label class="field span-2"><span>Remark</span><input id="out-remark" value="${esc(x.remark||'')}"></label>
+      <label class="check-row"><input id="out-enabled" type="checkbox" ${x.enabled?'checked':''}> Enabled</label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-outbound" data-id="${esc(id)}">Save + Deploy</button></div>
+    </div>`, 'EGRESS EDIT');
+    renderOutboundFields(x.protocol);
+    setInput('#out-address', x.address); setInput('#out-port', x.port); setInput('#out-user', x.username);
+    setInput('#out-transport', x.transport); setInput('#out-tls', x.tls_mode); setInput('#out-path', x.path);
+    setInput('#out-host', x.host); setInput('#out-service', x.service_name); setInput('#out-server-name', x.server_name);
+    setInput('#out-fingerprint', x.fingerprint); setInput('#out-flow', x.flow); setInput('#out-ss-method', x.shadowsocks_method);
+    setInput('#out-reality-key', x.reality_public_key); setInput('#out-reality-short', x.reality_short_id);
+    setChecked('#out-insecure', x.allow_insecure); setInput('#out-wg-interface', x.wireguard_interface);
+    setInput('#out-wg-address', x.wireguard_address); setInput('#out-wg-peer', x.wireguard_peer_public_key);
+    setInput('#out-wg-allowed', (x.wireguard_allowed_ips||[]).join(',')); setInput('#out-wg-keepalive', x.wireguard_keepalive);
+    setInput('#out-wg-mtu', x.wireguard_mtu); setInput('#out-tor-port', x.tor_socks_port);
+    setInput('#out-ovpn-interface', x.openvpn_interface); setInput('#out-ovpn-table', x.openvpn_routing_table);
+    setInput('#out-ovpn-mark', x.openvpn_mark);
+    const secret = $('#out-secret'); if (secret) secret.placeholder = 'خالی = credential فعلی حفظ می‌شود';
+  }
+
+  async function saveOutbound(id) {
+    const p = val('#out-protocol');
+    const body = {
+      name: val('#out-name').trim(), node_id: val('#out-node'), tag: val('#out-tag').trim(), protocol:p,
+      address: val('#out-address').trim(), port:num('#out-port'), username:val('#out-user').trim(),
+      password:val('#out-password'), secret:val('#out-secret'), transport:val('#out-transport'), tls_mode:val('#out-tls'),
+      path:val('#out-path').trim(), host:val('#out-host').trim(), service_name:val('#out-service').trim(),
+      server_name:val('#out-server-name').trim(), allow_insecure:Boolean($('#out-insecure')?.checked),
+      fingerprint:val('#out-fingerprint').trim(), flow:val('#out-flow'), shadowsocks_method:val('#out-ss-method'),
+      reality_public_key:val('#out-reality-key').trim(), reality_short_id:val('#out-reality-short').trim(),
+      wireguard_interface:val('#out-wg-interface').trim(), wireguard_address:val('#out-wg-address').trim(),
+      wireguard_peer_public_key:val('#out-wg-peer').trim(), wireguard_allowed_ips:csv(val('#out-wg-allowed')),
+      wireguard_keepalive:num('#out-wg-keepalive'), wireguard_mtu:num('#out-wg-mtu'),
+      tor_socks_port:num('#out-tor-port'), openvpn_interface:val('#out-ovpn-interface').trim(),
+      openvpn_routing_table:num('#out-ovpn-table'), openvpn_mark:num('#out-ovpn-mark'),
+      enabled:Boolean($('#out-enabled')?.checked), remark:val('#out-remark').trim()
+    };
+    await api(`outbounds/${id}`, {method:'PUT', body});
+    closeModal(); toast('Outbound بروزرسانی و deploy شد'); navigate('outbounds');
+  }
+
+  async function openGroupEdit(id) {
+    const [g,nodes,outbounds] = await Promise.all([api(`outbound-groups/${id}`),api('nodes'),api('outbounds')]);
+    state.cache.nodes=nodes||[]; state.cache.outbounds=outbounds||[];
+    modal('ویرایش Failover Group', `<div class="form-grid">
+      <label class="field"><span>Name</span><input id="group-name" value="${esc(g.name||'')}"></label>
+      <label class="field"><span>Node</span><select id="group-node" data-role="group-node">${nodeOptions(g.node_id)}</select></label>
+      <label class="field"><span>Strategy</span><select id="group-strategy">${['least_ping','least_load','round_robin','random'].map(s=>`<option value="${s}" ${s===g.strategy?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field"><span>Expected</span><input id="group-expected" type="number" value="${Number(g.expected||1)}"></label>
+      <label class="field span-2"><span>Fallback</span><select id="group-fallback"></select></label>
+      <div class="span-2"><div class="form-section-title">Members</div><div id="group-members" class="member-list"></div></div>
+      <label class="check-row"><input id="group-enabled" type="checkbox" ${g.enabled?'checked':''}> Enabled</label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-group" data-id="${esc(id)}">Save + Deploy</button></div>
+    </div>`, 'FAILOVER EDIT');
+    refreshGroupCandidates();
+    for (const m of (g.members||[])) {
+      setChecked(`[data-group-member="${CSS.escape(m.outbound_id)}"]`,true);
+      setInput(`[data-member-priority="${CSS.escape(m.outbound_id)}"]`,m.priority);
+      setInput(`[data-member-weight="${CSS.escape(m.outbound_id)}"]`,m.weight);
+    }
+    setInput('#group-fallback',g.fallback_outbound_id||'blocked');
+  }
+
+  async function saveGroup(id) {
+    const members=$$('[data-group-member]:checked').map(box=>{
+      const oid=box.dataset.groupMember;
+      return {outbound_id:oid,priority:Number($(`[data-member-priority="${CSS.escape(oid)}"]`)?.value||0),weight:Number($(`[data-member-weight="${CSS.escape(oid)}"]`)?.value||1)};
+    });
+    await api(`outbound-groups/${id}`,{method:'PUT',body:{
+      name:val('#group-name').trim(),node_id:val('#group-node'),strategy:val('#group-strategy'),members,
+      fallback_outbound_id:val('#group-fallback')||'blocked',expected:num('#group-expected',1),enabled:Boolean($('#group-enabled')?.checked)
+    }});
+    closeModal(); toast('Failover group بروزرسانی شد'); navigate('groups');
+  }
+
+  async function openRoutingEdit(id) {
+    const [r,nodes,inbounds,outbounds,groups,users]=await Promise.all([
+      api(`routing/${id}`),api('nodes'),api('inbounds'),api('outbounds'),api('outbound-groups'),api('users')
+    ]);
+    state.cache.nodes=nodes||[]; state.cache.inbounds=inbounds||[]; state.cache.outbounds=outbounds||[]; state.cache.groups=groups||[]; state.cache.users=normalizeUsers(users);
+    const targetType=r.outbound_group_id?'group':'outbound';
+    modal('ویرایش Routing Rule', `<div class="form-grid">
+      <label class="field"><span>Name</span><input id="route-name" value="${esc(r.name||'')}"></label>
+      <label class="field"><span>Priority</span><input id="route-priority" type="number" value="${Number(r.priority||0)}"></label>
+      <label class="field"><span>Node</span><select id="route-node" data-role="route-node">${nodeOptions(r.node_id)}</select></label>
+      <label class="field"><span>Target type</span><select id="route-target-type" data-role="route-target-type"><option value="outbound" ${targetType==='outbound'?'selected':''}>Outbound</option><option value="group" ${targetType==='group'?'selected':''}>Failover Group</option></select></label>
+      <label class="field span-2"><span>Target</span><select id="route-target"></select></label>
+      <label class="field"><span>Inbound</span><select id="route-inbound"></select></label>
+      <label class="field"><span>User</span><select id="route-user"><option value="">Any user</option>${state.cache.users.map(u=>`<option value="${esc(u.id)}" ${(r.user_ids||[])[0]===u.id?'selected':''}>${esc(u.username)}</option>`).join('')}</select></label>
+      <label class="field span-2"><span>Domains</span><input id="route-domains" value="${esc((r.domains||[]).join(','))}"></label>
+      <label class="field span-2"><span>IPs</span><input id="route-ips" value="${esc((r.ips||[]).join(','))}"></label>
+      <label class="field"><span>Ports</span><input id="route-ports" value="${esc(r.ports||'')}"></label>
+      <label class="field"><span>Network</span><select id="route-network"><option value="">Any</option>${['tcp','udp','tcp,udp'].map(n=>`<option value="${n}" ${r.network===n?'selected':''}>${n}</option>`).join('')}</select></label>
+      <label class="field span-2"><span>Protocols</span><input id="route-protocols" value="${esc((r.protocols||[]).join(','))}"></label>
+      <label class="check-row"><input id="route-enabled" type="checkbox" ${r.enabled?'checked':''}> Enabled</label>
+      <div class="span-2"><button class="btn primary wide" data-action="save-routing" data-id="${esc(id)}">Save + Deploy</button></div>
+    </div>`, 'ROUTING EDIT');
+    refreshRoutingCandidates();
+    setInput('#route-target', r.outbound_group_id||r.outbound_id);
+    setInput('#route-inbound',(r.inbound_ids||[])[0]||'');
+  }
+
+  async function saveRouting(id) {
+    const type=val('#route-target-type'),target=val('#route-target'),inbound=val('#route-inbound'),user=val('#route-user');
+    await api(`routing/${id}`,{method:'PUT',body:{
+      name:val('#route-name').trim(),node_id:val('#route-node'),priority:num('#route-priority'),enabled:Boolean($('#route-enabled')?.checked),
+      inbound_ids:inbound?[inbound]:[],user_ids:user?[user]:[],domains:csv(val('#route-domains')),ips:csv(val('#route-ips')),
+      ports:val('#route-ports').trim(),network:val('#route-network'),protocols:csv(val('#route-protocols')),
+      outbound_id:type==='outbound'?target:'',outbound_group_id:type==='group'?target:''
+    }});
+    closeModal(); toast('Routing rule بروزرسانی و deploy شد'); navigate('routing');
+  }
+
+  async function showRoutingDetail(id) {
+    const r=await api(`routing/${id}`);
+    modal(r.name||'Routing Rule', `<div class="detail-banner"><div>${iconTile('⌁','healthy')}<span><strong>${esc(r.name)}</strong><small>${esc(nodeName(r.node_id))}</small></span></div>${status(r.enabled?'active':'disabled')}</div>
+      <div class="card"><div class="resource-kvs">${kv('Priority',r.priority)}${kv('Target',r.outbound_group_id?groupName(r.outbound_group_id):outboundName(r.outbound_id))}${kv('Network',r.network||'Any')}${kv('Ports',r.ports||'Any')}</div>
+      <div class="match-chips">${[...(r.domains||[]),...(r.ips||[]),...(r.protocols||[])].map(x=>`<span>${esc(x)}</span>`).join('')||'<span>Any traffic</span>'}</div></div>`, 'ROUTING');
+  }
+
+  async function probeAllOutbounds() {
+    const ids = state.cache.outbounds.filter(x=>x.enabled).map(x=>x.id);
+    let ok=0, fail=0;
+    for (const id of ids) {
+      try { await api(`outbounds/${id}/probe`,{method:'POST'}); ok++; } catch { fail++; }
+    }
+    toast(`Probe complete: ${ok} ok, ${fail} failed`, fail?'error':'success');
+    navigate('outbounds');
+  }
+
   async function loadLogs() {
     const node = val('#log-node');
     const unit = val('#log-unit').trim();
@@ -1252,11 +1639,42 @@
         case 'create-outbound': return createOutbound();
         case 'create-group': return createGroup();
         case 'create-routing': return createRouting();
+        case 'save-user': return saveUser(id);
+        case 'save-plan': return savePlan(id);
+        case 'save-inbound': return saveInbound(id);
+        case 'save-outbound': return saveOutbound(id);
+        case 'save-group': return saveGroup(id);
+        case 'save-routing': return saveRouting(id);
+
+        case 'user-detail': return showUserDetail(id);
+        case 'edit-user': return openUserEdit(id);
+        case 'delete-user':
+          if (await confirmDelete('User حذف شود؟ Peerها و bindingهای مرتبط نیز پاک می‌شوند.')) {
+            await api(`users/${id}`, {method:'DELETE'}); toast('User حذف شد'); return navigate('users');
+          }
+          return;
+        case 'plan-detail': return showPlanDetail(id);
+        case 'edit-plan': return openPlanEdit(id);
+        case 'delete-plan':
+          if (await confirmDelete('Plan حذف شود؟ فقط plan بدون user قابل حذف است.')) {
+            await api(`plans/${id}`, {method:'DELETE'}); toast('Plan حذف شد'); return navigate('plans');
+          }
+          return;
+        case 'node-detail': return showNodeDetail(id);
+        case 'toggle-maintenance':
+          await api(`nodes/${id}/maintenance`, {method:'POST', body:{enabled:button.dataset.enabled!=='true'}});
+          toast('Maintenance state تغییر کرد'); return navigate('nodes');
+        case 'toggle-node':
+          await api(`nodes/${id}/${button.dataset.enabled==='true'?'disable':'enable'}`, {method:'POST'});
+          toast('Node state تغییر کرد'); return navigate('nodes');
+        case 'probe-all-outbounds': return probeAllOutbounds();
+        case 'routing-detail': return showRoutingDetail(id);
 
         case 'probe-node':
           await api(`nodes/${id}/probe`, {method: 'POST'}); toast('Node probe شد'); return navigate('nodes');
 
         case 'inbound-detail': return showInboundDetail(id);
+        case 'edit-inbound': return openInboundEdit(id);
         case 'redeploy-inbound':
           await api(`inbounds/${id}/redeploy`, {method: 'POST'}); toast('Inbound deploy شد'); return navigate('inbounds');
         case 'toggle-inbound':
@@ -1269,6 +1687,7 @@
           return;
 
         case 'outbound-detail': return showOutboundDetail(id);
+        case 'edit-outbound': return openOutboundEdit(id);
         case 'probe-outbound':
           await api(`outbounds/${id}/probe`, {method: 'POST'}); toast('Egress probe انجام شد'); return navigate('outbounds');
         case 'redeploy-outbound':
@@ -1283,12 +1702,14 @@
           return;
 
         case 'group-detail': return showGroupDetail(id);
+        case 'edit-group': return openGroupEdit(id);
         case 'delete-group':
           if (await confirmDelete('Failover group حذف شود؟')) {
             await api(`outbound-groups/${id}`, {method: 'DELETE'}); toast('Group حذف شد'); return navigate('groups');
           }
           return;
 
+        case 'edit-routing': return openRoutingEdit(id);
         case 'delete-routing':
           if (await confirmDelete('Routing rule حذف شود؟')) {
             await api(`routing/${id}`, {method: 'DELETE'}); toast('Rule حذف شد'); return navigate('routing');
@@ -1301,6 +1722,13 @@
       }
     } catch (error) {
       toast(error.message, 'error');
+    }
+  });
+
+
+  document.addEventListener('input', event => {
+    if (event.target.matches('.page-filter') || event.target.matches('#global-search')) {
+      applyPageFilter(event.target.value);
     }
   });
 
@@ -1319,6 +1747,10 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !$('#modal').classList.contains('hidden')) closeModal();
     if (event.key === 'Enter' && !$('#login-card').classList.contains('hidden')) login();
+    if (event.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) {
+      event.preventDefault();
+      $('#global-search')?.focus();
+    }
   });
 
   window.addEventListener('hashchange', () => {
