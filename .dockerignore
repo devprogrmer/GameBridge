@@ -1,8 +1,5 @@
-.git
-.gitignore
+﻿node_modules
 dist
-tmp
-*.ps1
-*.zip
-*.tar
-*.tar.gz
+.git
+*.log
+.env

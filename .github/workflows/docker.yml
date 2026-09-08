@@ -11,6 +11,7 @@ on:
       - "go.mod"
       - "go.sum"
       - ".github/workflows/docker.yml"
+
   push:
     branches: ["main"]
     paths:
@@ -31,6 +32,7 @@ jobs:
     name: Docker Build & Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -51,11 +53,14 @@ jobs:
       - name: Start panel container
         run: |
           set -euo pipefail
+
           docker volume create gamebridge-ci-data >/dev/null
+
           docker run -d \
             --name gamebridge-panel-ci \
             --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --tmpfs /etc/gamebridge:rw,noexec,nosuid,size=16m \
             --security-opt no-new-privileges \
             --cap-drop ALL \
             -p 127.0.0.1:18088:8088 \
@@ -65,6 +70,7 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
+
           for i in $(seq 1 45); do
             if curl -fsS http://127.0.0.1:18088/healthz >/dev/null; then
               curl -fsS http://127.0.0.1:18088/api/setup/status
@@ -72,6 +78,7 @@ jobs:
             fi
             sleep 2
           done
+
           docker logs gamebridge-panel-ci
           exit 1
 
