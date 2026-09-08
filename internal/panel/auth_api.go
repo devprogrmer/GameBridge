@@ -5,6 +5,10 @@ import "net/http"
 
 func (s *Server) registerAuthRoutes() {
 	s.mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		jsonWrite(w, http.StatusOK, map[string]string{"status": "ok"})
+		recordSecurityEvent("auth_me_access")
+
+		jsonWrite(w, http.StatusOK, map[string]string{
+			"status": "ok",
+		})
 	})
 }

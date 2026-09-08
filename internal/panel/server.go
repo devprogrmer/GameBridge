@@ -54,6 +54,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, e
 	}
 	s := &Server{cfg: cfg, store: st, crypt: NewCrypt(mk), sessionKey: sk, httpClient: &http.Client{Timeout: 10 * time.Second}, mux: http.NewServeMux()}
+	s.phase17AuthHardening()
 	s.routes()
 	go s.background()
 	return s, nil
