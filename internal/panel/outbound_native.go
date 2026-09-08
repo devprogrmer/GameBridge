@@ -63,8 +63,51 @@ func (s *Server) syncWireGuardOutbounds(nodeID string) error {
 	return nil
 }
 
+type nativeTorSpec struct {
+	Name      string `json:"name"`
+	SocksPort int    `json:"socks_port"`
+}
+
+func (s *Server) desiredTorOutbounds(nodeID string) (Node, []nativeTorSpec, error) {
+	var node Node
+	var specs []nativeTorSpec
+	err := s.store.Read(func(st State) error {
+		n := findNode(&st, nodeID)
+		if n == nil {
+			return errors.New("node not found")
+		}
+		node = *n
+		for _, out := range st.Outbounds {
+			if out.NodeID != nodeID || !out.Enabled || out.Protocol != "tor" {
+				continue
+			}
+			specs = append(specs, nativeTorSpec{
+				Name:      out.Tag,
+				SocksPort: out.TorSOCKSPort,
+			})
+		}
+		return nil
+	})
+	return node, specs, err
+}
+
+func (s *Server) syncTorOutbounds(nodeID string) error {
+	node, specs, err := s.desiredTorOutbounds(nodeID)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{"outbounds": specs}
+	if err := s.agentJSON(node, http.MethodPost, "/v1/tor/outbounds/sync", payload, nil); err != nil {
+		return fmt.Errorf("sync native Tor outbounds: %w", err)
+	}
+	return nil
+}
+
 func (s *Server) deployOutboundNode(nodeID string) error {
 	if err := s.syncWireGuardOutbounds(nodeID); err != nil {
+		return err
+	}
+	if err := s.syncTorOutbounds(nodeID); err != nil {
 		return err
 	}
 	if err := s.deployXrayNode(nodeID); err != nil {

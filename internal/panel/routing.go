@@ -51,6 +51,7 @@ type outboundInput struct {
 	WireGuardAllowedIPs    []string `json:"wireguard_allowed_ips"`
 	WireGuardKeepalive     int      `json:"wireguard_keepalive"`
 	WireGuardMTU           int      `json:"wireguard_mtu"`
+	TorSOCKSPort           int      `json:"tor_socks_port"`
 	Enabled                bool     `json:"enabled"`
 	Remark                 string   `json:"remark"`
 }
@@ -244,7 +245,41 @@ func normalizeOutboundInput(in *outboundInput) error {
 		in.ShadowsocksMethod = ""
 		in.RealityPublicKey = ""
 		in.RealityShortID = ""
+		in.TorSOCKSPort = 0
 		return nil
+
+	case "tor":
+		if in.TorSOCKSPort == 0 {
+			in.TorSOCKSPort = 19050
+		}
+		if in.TorSOCKSPort < 1024 || in.TorSOCKSPort > 65535 {
+			return errors.New("tor_socks_port must be between 1024 and 65535")
+		}
+		in.Address = ""
+		in.Port = 0
+		in.Username = ""
+		in.Password = ""
+		in.Secret = ""
+		in.Transport = ""
+		in.TLSMode = ""
+		in.Path = ""
+		in.Host = ""
+		in.ServiceName = ""
+		in.ServerName = ""
+		in.AllowInsecure = false
+		in.Fingerprint = ""
+		in.Flow = ""
+		in.ShadowsocksMethod = ""
+		in.RealityPublicKey = ""
+		in.RealityShortID = ""
+		in.WireGuardInterface = ""
+		in.WireGuardAddress = ""
+		in.WireGuardPeerPublicKey = ""
+		in.WireGuardAllowedIPs = nil
+		in.WireGuardKeepalive = 0
+		in.WireGuardMTU = 0
+		return nil
+
 	case "shadowsocks":
 		if in.Address == "" || in.Port < 1 || in.Port > 65535 {
 			return errors.New("shadowsocks outbound requires address and valid port")
@@ -271,7 +306,7 @@ func normalizeOutboundInput(in *outboundInput) error {
 		return nil
 
 	default:
-		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan or shadowsocks")
+		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan, shadowsocks, wireguard or tor")
 	}
 }
 func normalizeRoutingRule(in *RoutingRule) error {
@@ -613,6 +648,17 @@ func (s *Server) buildXrayOutbounds(st State, nodeID string) ([]any, error) {
 					"interface": x.WireGuardInterface,
 				},
 			}
+
+		case "tor":
+			if x.TorSOCKSPort < 1024 || x.TorSOCKSPort > 65535 {
+				return nil, fmt.Errorf("outbound %s has invalid Tor SOCKS port", x.Tag)
+			}
+			item["protocol"] = "socks"
+			item["settings"] = map[string]any{
+				"address": "127.0.0.1",
+				"port":    x.TorSOCKSPort,
+			}
+
 		case "shadowsocks":
 			if secret == "" {
 				return nil, fmt.Errorf("outbound %s requires a Shadowsocks password", x.Tag)
