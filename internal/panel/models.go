@@ -153,19 +153,31 @@ type InboundClient struct {
 }
 
 type Outbound struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	NodeID      string    `json:"node_id"`
-	Tag         string    `json:"tag"`
-	Protocol    string    `json:"protocol"`
-	Address     string    `json:"address"`
-	Port        int       `json:"port"`
-	Username    string    `json:"username"`
-	PasswordEnc string    `json:"-"`
-	Enabled     bool      `json:"enabled"`
-	Remark      string    `json:"remark"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	NodeID            string    `json:"node_id"`
+	Tag               string    `json:"tag"`
+	Protocol          string    `json:"protocol"`
+	Address           string    `json:"address"`
+	Port              int       `json:"port"`
+	Username          string    `json:"username"`
+	PasswordEnc       string    `json:"-"`
+	Transport         string    `json:"transport"`
+	TLSMode           string    `json:"tls_mode"`
+	Path              string    `json:"path"`
+	Host              string    `json:"host"`
+	ServiceName       string    `json:"service_name"`
+	ServerName        string    `json:"server_name"`
+	AllowInsecure     bool      `json:"allow_insecure"`
+	Fingerprint       string    `json:"fingerprint"`
+	Flow              string    `json:"flow"`
+	ShadowsocksMethod string    `json:"shadowsocks_method"`
+	RealityPublicKey  string    `json:"reality_public_key"`
+	RealityShortID    string    `json:"reality_short_id"`
+	Enabled           bool      `json:"enabled"`
+	Remark            string    `json:"remark"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type RoutingRule struct {
