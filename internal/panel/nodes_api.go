@@ -1,2 +1,2 @@
-// Phase3 nodes API foundation
+// Phase5 production nodes API expansion point
 package panel
