@@ -157,23 +157,16 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		obj := inboundFromCreate(in)
-		if err := s.store.Update(func(st *State) error {
-			if err := validateInboundTargetSpec(st, "", obj.Name, obj.NodeID, obj.Listen, obj.Port); err != nil {
-				return err
+		if err := createInboundTransactional(s.store, obj, s.deployXrayNode); err != nil {
+			if isInboundDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else {
+				jsonError(w, http.StatusConflict, err.Error())
 			}
-			st.Inbounds = append(st.Inbounds, obj)
-			return nil
-		}); err != nil {
-			jsonError(w, http.StatusConflict, err.Error())
 			return
 		}
 
-		deployErr := s.deployXrayNode(obj.NodeID)
 		s.audit(r, "create", "inbound:"+obj.Name)
-		if deployErr != nil {
-			jsonWrite(w, http.StatusCreated, map[string]any{"inbound": obj, "deploy_error": deployErr.Error()})
-			return
-		}
 		jsonWrite(w, http.StatusCreated, map[string]any{"inbound": obj})
 
 	default:
@@ -375,33 +368,17 @@ func (s *Server) handleInboundItem(w http.ResponseWriter, r *http.Request, rest 
 			jsonError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		var nodeID string
-		err := s.store.Update(func(st *State) error {
-			in := findInbound(st, id)
-			if in == nil {
-				return errors.New("inbound not found")
+		if err := deleteInboundTransactional(s.store, id, s.deployXrayNode); err != nil {
+			if isInboundDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else if err.Error() == "inbound not found" {
+				jsonError(w, http.StatusNotFound, err.Error())
+			} else {
+				jsonError(w, http.StatusConflict, err.Error())
 			}
-			nodeID = in.NodeID
-			st.Inbounds = deleteByID(st.Inbounds, id, func(x Inbound) string { return x.ID })
-			out := st.InboundClients[:0]
-			for _, c := range st.InboundClients {
-				if c.InboundID != id {
-					out = append(out, c)
-				}
-			}
-			st.InboundClients = out
-			return nil
-		})
-		if err != nil {
-			jsonError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		deployErr := s.deployXrayNode(nodeID)
 		s.audit(r, "delete", "inbound:"+id)
-		if deployErr != nil {
-			jsonWrite(w, http.StatusOK, map[string]any{"ok": true, "deploy_error": deployErr.Error()})
-			return
-		}
 		jsonWrite(w, http.StatusOK, map[string]bool{"ok": true})
 
 	default:

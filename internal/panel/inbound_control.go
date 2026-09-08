@@ -131,33 +131,17 @@ func (s *Server) handleInboundControl(w http.ResponseWriter, r *http.Request, id
 			return
 		}
 		enable := action == "enable"
-		var nodeID string
-		err := s.store.Update(func(st *State) error {
-			in := findInbound(st, id)
-			if in == nil {
-				return errors.New("inbound not found")
+		if err := setInboundEnabledTransactional(s.store, id, enable, s.deployXrayNode); err != nil {
+			if isInboundDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else if err.Error() == "inbound not found" {
+				jsonError(w, http.StatusNotFound, err.Error())
+			} else {
+				jsonError(w, http.StatusConflict, err.Error())
 			}
-			if enable {
-				if err := validateInboundTarget(st, in.ID, in.NodeID, in.Listen, in.Port); err != nil {
-					return err
-				}
-			}
-			in.Enabled = enable
-			in.Status = map[bool]string{true: "configured", false: "disabled"}[enable]
-			in.UpdatedAt = time.Now().UTC()
-			nodeID = in.NodeID
-			return nil
-		})
-		if err != nil {
-			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		deployErr := s.deployXrayNode(nodeID)
 		s.audit(r, action, "inbound:"+id)
-		if deployErr != nil {
-			jsonWrite(w, http.StatusOK, map[string]any{"ok": true, "deploy_error": deployErr.Error()})
-			return
-		}
 		jsonWrite(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }

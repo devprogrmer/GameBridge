@@ -477,22 +477,15 @@ func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
 		in.Enabled = true
 		in.CreatedAt = time.Now().UTC()
 		in.UpdatedAt = in.CreatedAt
-		if err := s.store.Update(func(st *State) error {
-			if err := validateRoutingReferences(st, in); err != nil {
-				return err
+		if err := createRoutingRuleTransactional(s.store, in, s.deployXrayNode); err != nil {
+			if isRoutingDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else {
+				jsonError(w, http.StatusBadRequest, err.Error())
 			}
-			st.RoutingRules = append(st.RoutingRules, in)
-			return nil
-		}); err != nil {
-			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		deployErr := s.deployXrayNode(in.NodeID)
 		s.audit(r, "create", "routing:"+in.Name)
-		if deployErr != nil {
-			jsonWrite(w, http.StatusCreated, map[string]any{"rule": in, "deploy_error": deployErr.Error()})
-			return
-		}
 		jsonWrite(w, http.StatusCreated, map[string]any{"rule": in})
 
 	default:
@@ -532,31 +525,14 @@ func (s *Server) handleRoutingRuleItem(w http.ResponseWriter, r *http.Request, i
 			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		var oldNodeID string
-		err := s.store.Update(func(st *State) error {
-			x := findRoutingRule(st, id)
-			if x == nil {
-				return errors.New("routing rule not found")
+		if err := updateRoutingRuleTransactional(s.store, id, in, s.deployXrayNode); err != nil {
+			if isRoutingDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else if err.Error() == "routing rule not found" {
+				jsonError(w, http.StatusNotFound, err.Error())
+			} else {
+				jsonError(w, http.StatusBadRequest, err.Error())
 			}
-			oldNodeID = x.NodeID
-			in.ID = x.ID
-			in.CreatedAt = x.CreatedAt
-			in.UpdatedAt = time.Now().UTC()
-			if err := validateRoutingReferences(st, in); err != nil {
-				return err
-			}
-			*x = in
-			return nil
-		})
-		if err != nil {
-			jsonError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if oldNodeID != "" && oldNodeID != in.NodeID {
-			_ = s.deployXrayNode(oldNodeID)
-		}
-		if err := s.deployXrayNode(in.NodeID); err != nil {
-			jsonError(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		s.audit(r, "update", "routing:"+id)
@@ -567,26 +543,17 @@ func (s *Server) handleRoutingRuleItem(w http.ResponseWriter, r *http.Request, i
 			jsonError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		var nodeID string
-		err := s.store.Update(func(st *State) error {
-			x := findRoutingRule(st, id)
-			if x == nil {
-				return errors.New("routing rule not found")
+		if err := deleteRoutingRuleTransactional(s.store, id, s.deployXrayNode); err != nil {
+			if isRoutingDeploymentError(err) {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else if err.Error() == "routing rule not found" {
+				jsonError(w, http.StatusNotFound, err.Error())
+			} else {
+				jsonError(w, http.StatusConflict, err.Error())
 			}
-			nodeID = x.NodeID
-			st.RoutingRules = deleteByID(st.RoutingRules, id, func(x RoutingRule) string { return x.ID })
-			return nil
-		})
-		if err != nil {
-			jsonError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		deployErr := s.deployXrayNode(nodeID)
 		s.audit(r, "delete", "routing:"+id)
-		if deployErr != nil {
-			jsonWrite(w, http.StatusOK, map[string]any{"ok": true, "deploy_error": deployErr.Error()})
-			return
-		}
 		jsonWrite(w, http.StatusOK, map[string]bool{"ok": true})
 
 	default:
