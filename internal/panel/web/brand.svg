@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GameBridge logo">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16283a"/><stop offset="1" stop-color="#081019"/>
+    </linearGradient>
+    <linearGradient id="line" x1="13" y1="43" x2="52" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6df1b3"/><stop offset="1" stop-color="#61a8ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#bg)" stroke="#29445b" stroke-width="2"/>
+  <path d="M13 42h38" stroke="#38546d" stroke-width="3" stroke-linecap="round"/>
+  <path d="M16 42c3-15 11-22 16-22s13 7 16 22" fill="none" stroke="url(#line)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M22 42V31m20 11V31M32 42V20" stroke="url(#line)" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="16" cy="42" r="4" fill="#6df1b3"/><circle cx="32" cy="20" r="4" fill="#dfffee"/><circle cx="48" cy="42" r="4" fill="#61a8ff"/>
+  <circle cx="32" cy="42" r="3" fill="#9b7bff"/>
+</svg>

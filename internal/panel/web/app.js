@@ -7,6 +7,9 @@
   const state = {
     me: null,
     page: 'dashboard',
+    filter: '',
+    confirmResolve: null,
+    live: {enabled: true, intervalMs: 15000, timer: null},
     cache: {
       dashboard: null,
       nodes: [],
@@ -122,10 +125,59 @@
     return Math.max(0, Math.min(100, Math.round((u / l) * 100)));
   }
 
+  function progressMeter(value, label = '') {
+    const p = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+    return `<div class="usage"><progress class="usage-progress" max="100" value="${p}" aria-label="${esc(label || `${p}%`)}">${p}%</progress>${label ? `<small>${esc(label)}</small>` : ''}</div>`;
+  }
+
   function usageBar(used, limit) {
     const p = pct(used, limit);
     const label = limit ? `${fmtBytes(used)} / ${fmtBytes(limit)}` : `${fmtBytes(used)} / Unlimited`;
-    return `<div class="usage"><div class="usage-track"><i style="width:${p}%"></i></div><small>${esc(label)}</small></div>`;
+    return progressMeter(p, label);
+  }
+
+  function donutChart(value, label, detail = '') {
+    const p = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+    return `<div class="donut-chart" role="img" aria-label="${esc(label)} ${p}%">
+      <svg viewBox="0 0 42 42" aria-hidden="true">
+        <circle class="donut-track" cx="21" cy="21" r="15.9155" pathLength="100"></circle>
+        <circle class="donut-value" cx="21" cy="21" r="15.9155" pathLength="100" stroke-dasharray="${p} ${100-p}" transform="rotate(-90 21 21)"></circle>
+      </svg>
+      <div><strong>${p}%</strong><span>${esc(label)}</span>${detail ? `<small>${esc(detail)}</small>` : ''}</div>
+    </div>`;
+  }
+
+  function trafficChart(rows) {
+    const top = [...(rows || [])].sort((a,b) => Number(b.traffic_bytes||0)-Number(a.traffic_bytes||0)).slice(0, 8);
+    if (!top.length) return '<div class="empty">Traffic sample وجود ندارد.</div>';
+    const max = Math.max(1, ...top.map(x => Number(x.traffic_bytes || 0)));
+    const width = 720, height = 230, baseY = 180, chartH = 145, barW = 48, gap = 34, startX = 45;
+    const bars = top.map((u, i) => {
+      const total = Number(u.traffic_bytes || 0);
+      const xray = Math.min(total, Number(u.xray_bytes || 0));
+      const wg = Math.min(Math.max(0,total-xray), Number(u.wireguard_bytes || 0));
+      const totalH = Math.max(2, Math.round((total/max)*chartH));
+      const xrayH = total ? Math.round((xray/total)*totalH) : 0;
+      const wgH = Math.max(0, totalH-xrayH);
+      const x = startX + i*(barW+gap);
+      const label = String(u.username || 'user').slice(0, 10);
+      return `<g>
+        <rect class="chart-bar xray" x="${x}" y="${baseY-xrayH}" width="${barW}" height="${xrayH}" rx="6"></rect>
+        <rect class="chart-bar wireguard" x="${x}" y="${baseY-totalH}" width="${barW}" height="${wgH}" rx="6"></rect>
+        <text class="chart-label" x="${x+barW/2}" y="202" text-anchor="middle">${esc(label)}</text>
+      </g>`;
+    }).join('');
+    return `<div class="chart-shell"><div class="chart-legend"><span><i class="xray"></i>Xray</span><span><i class="wireguard"></i>WireGuard</span></div><svg class="traffic-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Top traffic users">${bars}</svg></div>`;
+  }
+
+  function fleetChart(nodes) {
+    const rows = (nodes || []).slice(0, 8);
+    if (!rows.length) return '<div class="empty">Node metric وجود ندارد.</div>';
+    return `<div class="fleet-chart">${rows.map(n => {
+      const ram = n.metrics?.memory_total ? Math.round(100*(1-n.metrics.memory_available/n.metrics.memory_total)) : 0;
+      const disk = n.metrics?.disk_total ? Math.round(100*(1-n.metrics.disk_free/n.metrics.disk_total)) : 0;
+      return `<div class="fleet-chart-row"><div><strong>${esc(n.name)}</strong><small>${esc(n.status)}</small></div><span>RAM ${ram}%</span><progress max="100" value="${ram}" aria-label="RAM ${ram}%"></progress><span>Disk ${disk}%</span><progress max="100" value="${disk}" aria-label="Disk ${disk}%"></progress></div>`;
+    }).join('')}</div>`;
   }
 
   function iconTile(icon, tone = '') {
@@ -148,7 +200,8 @@
   }
 
   function applyPageFilter(value) {
-    const q = String(value || '').trim().toLowerCase();
+    state.filter = String(value || '');
+    const q = state.filter.trim().toLowerCase();
     $$('.filterable').forEach(el => {
       const hay = (el.dataset.search || el.textContent || '').toLowerCase();
       el.classList.toggle('hidden-by-filter', !!q && !hay.includes(q));
@@ -187,6 +240,8 @@
     $('#current-role').textContent = role;
     $('#role-label').textContent = `${role} · Control Center`;
     $('#user-avatar').textContent = user.slice(0, 1).toUpperCase();
+    updateLiveControl();
+    startLiveRefresh();
   }
 
   async function bootstrap() {
@@ -245,6 +300,7 @@
   }
 
   async function logout() {
+    stopLiveRefresh();
     try { await api('auth/logout', {method: 'POST'}); } catch {}
     location.reload();
   }
@@ -257,8 +313,32 @@
   }
 
   function closeModal() {
+    if (state.confirmResolve) {
+      const resolve = state.confirmResolve;
+      state.confirmResolve = null;
+      resolve(false);
+    }
     $('#modal').classList.add('hidden');
     $('#modal-body').innerHTML = '';
+  }
+
+  function settleConfirm(value) {
+    const resolve = state.confirmResolve;
+    state.confirmResolve = null;
+    $('#modal').classList.add('hidden');
+    $('#modal-body').innerHTML = '';
+    if (resolve) resolve(Boolean(value));
+  }
+
+  function confirmAction(message, title = 'تأیید عملیات') {
+    return new Promise(resolve => {
+      state.confirmResolve = resolve;
+      modal(title, `<div class="confirm-panel">
+        <div class="confirm-icon">!</div>
+        <div><h4>این عملیات نیاز به تأیید دارد</h4><p>${esc(message)}</p></div>
+      </div>
+      <div class="confirm-actions"><button class="btn ghost" data-action="confirm-cancel">انصراف</button><button class="btn danger" data-action="confirm-accept">تأیید و ادامه</button></div>`, 'SAFE ACTION');
+    });
   }
 
   function setPageChrome(page) {
@@ -273,34 +353,62 @@
     if (window.innerWidth <= 900) $('#sidebar').classList.remove('open');
   }
 
+  const renderers = {
+    dashboard: renderDashboard, users: renderUsers, plans: renderPlans, nodes: renderNodes,
+    inbounds: renderInbounds, outbounds: renderOutbounds, groups: renderGroups, routing: renderRouting,
+    online: renderOnline, traffic: renderTraffic, tunnels: renderTunnels, forwards: renderForwards,
+    logs: renderLogs, audit: renderAudit, admins: renderAdmins, settings: renderSettings
+  };
+
+  async function renderPage(page) {
+    await (renderers[page] || renderDashboard)();
+    if (state.filter) applyPageFilter(state.filter);
+  }
+
   async function navigate(page) {
     if (!pages[page]) page = 'dashboard';
+    if (state.page !== page) {
+      state.filter = '';
+      if ($('#global-search')) $('#global-search').value = '';
+    }
     setPageChrome(page);
     history.replaceState(null, '', '#/' + page);
     try {
-      const renderers = {
-        dashboard: renderDashboard,
-        users: renderUsers,
-        plans: renderPlans,
-        nodes: renderNodes,
-        inbounds: renderInbounds,
-        outbounds: renderOutbounds,
-        groups: renderGroups,
-        routing: renderRouting,
-        online: renderOnline,
-        traffic: renderTraffic,
-        tunnels: renderTunnels,
-        forwards: renderForwards,
-        logs: renderLogs,
-        audit: renderAudit,
-        admins: renderAdmins,
-        settings: renderSettings
-      };
-      await (renderers[page] || renderDashboard)();
+      await renderPage(page);
     } catch (error) {
       $('#content').innerHTML = emptyState('خطا در بارگذاری', error.message);
       toast(error.message, 'error');
     }
+  }
+
+  const livePages = new Set(['dashboard','nodes','outbounds','groups','online','traffic']);
+
+  function updateLiveControl() {
+    const button = $('#live-toggle');
+    if (!button) return;
+    button.classList.toggle('active', state.live.enabled);
+    button.setAttribute('aria-pressed', state.live.enabled ? 'true' : 'false');
+    button.innerHTML = `<span></span> ${state.live.enabled ? 'LIVE · 15s' : 'PAUSED'}`;
+  }
+
+  function startLiveRefresh() {
+    if (state.live.timer) return;
+    state.live.timer = window.setInterval(async () => {
+      if (!state.live.enabled || document.hidden || !livePages.has(state.page)) return;
+      if (!$('#modal').classList.contains('hidden')) return;
+      try { await renderPage(state.page); } catch {}
+    }, state.live.intervalMs);
+  }
+
+  function stopLiveRefresh() {
+    if (state.live.timer) window.clearInterval(state.live.timer);
+    state.live.timer = null;
+  }
+
+  function toggleLiveRefresh() {
+    state.live.enabled = !state.live.enabled;
+    updateLiveControl();
+    toast(state.live.enabled ? 'Live refresh فعال شد' : 'Live refresh متوقف شد', 'success');
   }
 
   function emptyState(title, text = '') {
@@ -385,7 +493,7 @@
                   <div><span>LOAD</span><strong>${load.toFixed(2)}</strong></div>
                   <div><span>FAIL</span><strong>${Number(n.failure_count || 0)}</strong></div>
                 </div>
-                <div class="usage-track"><i style="width:${Math.min(100, ram || 0)}%"></i></div>
+                ${progressMeter(Math.min(100, ram || 0))}
               </article>`;
             }).join('') || '<div class="empty">نودی اضافه نشده است.</div>'}
           </div>
@@ -401,6 +509,14 @@
               <div>${iconTile((x.protocol || '?').slice(0, 1).toUpperCase(), x.health_status)}<span><strong>${esc(x.name)}</strong><small>${esc(x.protocol)} · ${esc(nodeName(x.node_id))}</small></span></div>
               <div>${latency(x.health_latency_ms)}${status(x.enabled ? (x.health_status || 'unknown') : 'disabled')}</div>
             </button>`).join('') || '<div class="empty">Outbound تعریف نشده است.</div>'}
+          </div>
+        </div>
+
+        <div class="card span-full analytics-panel">
+          <div class="card-head"><div><span class="eyebrow">LIVE ANALYTICS</span><h3>Fleet & Egress Snapshot</h3><p>نمودارهای داده‌محور بدون CDN؛ هر 15 ثانیه در حالت Live به‌روزرسانی می‌شوند.</p></div><span class="live-badge"><i></i> LIVE</span></div>
+          <div class="analytics-grid">
+            <div class="chart-card">${donutChart(healthRate, 'Healthy egress', `${healthy}/${enabledOut.length} enabled`)}</div>
+            <div class="chart-card"><h4>Node utilization</h4>${fleetChart(state.cache.nodes)}</div>
           </div>
         </div>
 
@@ -505,8 +621,8 @@
               ${status(n.maintenance ? 'maintenance' : n.status)}
             </div>
             <div class="node-gauges">
-              <div><span>RAM</span><strong>${ram}%</strong><div class="usage-track"><i style="width:${ram}%"></i></div></div>
-              <div><span>LOAD</span><strong>${load.toFixed(2)}</strong><div class="usage-track"><i style="width:${Math.min(100, load*25)}%"></i></div></div>
+              <div><span>RAM</span><strong>${ram}%</strong>${progressMeter(ram, `RAM ${ram}%`)}</div>
+              <div><span>LOAD</span><strong>${load.toFixed(2)}</strong>${progressMeter(Math.min(100, load*25), `Load ${load.toFixed(2)}`)}</div>
             </div>
             <div class="resource-kvs">${kv('Role', n.role || '-')}${kv('Core', n.metrics?.core_version || '-')}${kv('Failures', n.failure_count || 0)}</div>
             ${resourceActions([
@@ -684,6 +800,7 @@
         [rows.length,'Accounts'], [fmtBytes(total),'Total traffic'], [rows.filter(x=>Number(x.limit_bytes||0)>0).length,'Quota controlled']
       ], '<button class="btn ghost" data-action="sync-traffic">Sync now</button>')}
       ${filterToolbar('جستجوی user یا status...', `${fmtBytes(total)} total`)}
+      <div class="card traffic-analytics-card"><div class="card-head"><div><span class="eyebrow">BREAKDOWN</span><h3>Top Consumers</h3><p>تقسیم مصرف Xray و WireGuard برای کاربران پرمصرف</p></div></div>${trafficChart(rows)}</div>
       <div class="traffic-list">
         ${rows.map(u => `<article class="traffic-card filterable" data-search="${esc(`${u.username} ${u.status}`)}">
           <div class="traffic-user"><div>${iconTile((u.username||'U').slice(0,1).toUpperCase(),u.status)}<span><strong>${esc(u.username)}</strong><small>${status(u.status)}</small></span></div><strong>${fmtBytes(u.traffic_bytes)}</strong></div>
@@ -1291,26 +1408,26 @@
   }
 
   async function showOutboundDetail(id) {
-    const [summary, health] = await Promise.all([
-      api(`outbounds/${id}/summary`),
-      api(`outbounds/${id}/health`)
-    ]);
+    const [summary, health] = await Promise.all([api(`outbounds/${id}/summary`),api(`outbounds/${id}/health`)]);
     const out = summary.outbound || {};
+    const healthValue = (health.health_status || summary.health_status) === 'healthy' ? 100 : 0;
     modal(out.name || 'Outbound', `
-      <div class="grid three-col">
-        ${metricCard('Health', health.health_status || summary.health_status || 'unknown', health.health_target || 'egress probe', '●')}
-        ${metricCard('Latency', health.health_latency_ms ? `${health.health_latency_ms} ms` : '-', `Failures: ${health.health_failure_count || 0}`, '↯')}
-        ${metricCard('Routing', summary.enabled_rules || 0, `${summary.routing_rules || 0} total rules`, '⌁')}
-      </div>
-      <div class="card">
-        <div class="stat-list">
-          <div class="stat-line"><span>Protocol</span>${protocol(out.protocol)}</div>
-          <div class="stat-line"><span>Node</span><span>${esc(nodeName(out.node_id))}</span></div>
-          <div class="stat-line"><span>Tag</span><span class="mono">${esc(out.tag)}</span></div>
-          <div class="stat-line"><span>Last checked</span><span>${fmtDate(health.health_last_checked_at)}</span></div>
-          <div class="stat-line"><span>Last error</span><span>${esc(health.health_last_error || '-')}</span></div>
+      <div class="outbound-detail-layout">
+        <div class="card">${donutChart(healthValue, health.health_status || summary.health_status || 'unknown', health.health_latency_ms ? `${health.health_latency_ms} ms` : 'No latency')}</div>
+        <div class="grid three-col">
+          ${metricCard('Latency', health.health_latency_ms ? `${health.health_latency_ms} ms` : '-', `Failures: ${health.health_failure_count || 0}`, '↯')}
+          ${metricCard('Routing', summary.enabled_rules || 0, `${summary.routing_rules || 0} total rules`, '⌁')}
+          ${metricCard('Node', nodeName(out.node_id), summary.node_status || 'unknown', '◉')}
         </div>
-      </div>`, 'OUTBOUND HEALTH');
+      </div>
+      <div class="card"><div class="stat-list">
+        <div class="stat-line"><span>Protocol</span>${protocol(out.protocol)}</div>
+        <div class="stat-line"><span>Tag</span><span class="mono">${esc(out.tag)}</span></div>
+        <div class="stat-line"><span>Target</span><span class="mono">${esc(outboundTarget(out))}</span></div>
+        <div class="stat-line"><span>Last checked</span><span>${fmtDate(health.health_last_checked_at)}</span></div>
+        <div class="stat-line"><span>Last success</span><span>${fmtDate(health.health_last_success_at)}</span></div>
+        <div class="stat-line"><span>Last error</span><span>${esc(health.health_last_error || '-')}</span></div>
+      </div></div>`, 'OUTBOUND TELEMETRY');
   }
 
   async function showGroupDetail(id) {
@@ -1336,12 +1453,14 @@
 
   async function showUserDetail(id) {
     const d = await api(`users/${id}`);
-    const u = d.user || d;
-    const ent = d.entitlements || {};
+    const u = d.user || d, ent = d.entitlements || {};
+    const limit=Number(u.data_limit_bytes||ent.data_limit_bytes||0);
+    const quota=limit?pct(u.traffic_used_bytes,limit):0;
     modal(u.username || 'User', `
       <div class="detail-banner"><div>${iconTile((u.username||'U').slice(0,1).toUpperCase(),u.status)}<span><strong>${esc(u.username)}</strong><small>${esc(u.display_name||u.email||'')}</small></span></div>${status(u.status)}</div>
-      <div class="grid three-col detail-metrics">${metricCard('Traffic',fmtBytes(u.traffic_used_bytes),'Consumed','↕')}${metricCard('Devices',u.device_limit||ent.device_limit||'-','Allowed','◎')}${metricCard('Expires',fmtDate(u.expires_at),'Lifecycle','◷')}</div>
-      <div class="card"><div class="resource-kvs">${kv('Plan',u.plan_id||'-')}${kv('Email',u.email||'-')}${kv('Reset',fmtDate(u.next_traffic_reset_at))}</div></div>`, 'USER PROFILE');
+      <div class="user-detail-layout"><div class="card">${donutChart(quota, limit?'Quota used':'Unlimited', limit?`${fmtBytes(u.traffic_used_bytes)} / ${fmtBytes(limit)}`:fmtBytes(u.traffic_used_bytes))}</div>
+      <div class="grid three-col detail-metrics">${metricCard('Traffic',fmtBytes(u.traffic_used_bytes),'Consumed','↕')}${metricCard('Devices',u.device_limit||ent.device_limit||'-','Allowed','◎')}${metricCard('Expires',fmtDate(u.expires_at),'Lifecycle','◷')}</div></div>
+      <div class="card"><div class="resource-kvs">${kv('Plan',u.plan_id||'-')}${kv('Email',u.email||'-')}${kv('Xray',fmtBytes(u.xray_traffic_bytes||0))}${kv('WireGuard',fmtBytes(u.wireguard_traffic_bytes||0))}${kv('Reset',fmtDate(u.next_traffic_reset_at))}${kv('Last online',fmtDate(u.last_online_at))}</div></div>`, 'USER TELEMETRY');
   }
 
   async function openUserEdit(id) {
@@ -1399,10 +1518,23 @@
 
   async function showNodeDetail(id) {
     const [d,m] = await Promise.all([api(`nodes/${id}`),api(`nodes/${id}/metrics`)]);
-    const n=d.node||d;
+    const n=d.node||d, metrics=m.metrics||{};
+    const ram=metrics.memory_total?Math.round(100*(1-metrics.memory_available/metrics.memory_total)):0;
+    const disk=metrics.disk_total?Math.round(100*(1-metrics.disk_free/metrics.disk_total)):0;
+    const uptime=Number(metrics.uptime_seconds||0);
     modal(n.name||'Node', `<div class="detail-banner"><div>${iconTile('N',n.status)}<span><strong>${esc(n.name)}</strong><small class="mono">${esc(n.public_ip||n.agent_url||'-')}</small></span></div>${status(n.maintenance?'maintenance':n.status)}</div>
-      <div class="grid three-col detail-metrics">${metricCard('Load',Number(m.metrics?.load_1||0).toFixed(2),'1 minute','↯')}${metricCard('Failures',m.failure_count||0,'Probe failures','!')}${metricCard('Last seen',fmtDate(m.last_seen),'Agent heartbeat','◷')}</div>
-      <div class="card"><div class="resource-kvs">${kv('Role',n.role||'-')}${kv('Interface',n.internet_interface||'-')}${kv('Agent URL',n.agent_url||'-')}${kv('Last error',m.last_error||'-')}</div></div>`, 'NODE');
+      <div class="grid three-col detail-metrics">${metricCard('Load',Number(metrics.load_1||0).toFixed(2),'1 minute','↯')}${metricCard('RAM',`${ram}%`,fmtBytes(metrics.memory_total||0),'▣')}${metricCard('Disk',`${disk}%`,fmtBytes(metrics.disk_total||0),'◫')}</div>
+      <div class="card node-detail-grid">
+        <div>${donutChart(ram,'RAM used',fmtBytes((metrics.memory_total||0)-(metrics.memory_available||0)))}</div>
+        <div>${donutChart(disk,'Disk used',fmtBytes((metrics.disk_total||0)-(metrics.disk_free||0)))}</div>
+        <div class="stat-list">
+          <div class="stat-line"><span>Network RX</span><strong>${fmtBytes(metrics.network_rx||0)}</strong></div>
+          <div class="stat-line"><span>Network TX</span><strong>${fmtBytes(metrics.network_tx||0)}</strong></div>
+          <div class="stat-line"><span>Uptime</span><strong>${Math.floor(uptime/3600)} h</strong></div>
+          <div class="stat-line"><span>Core</span><strong>${esc(metrics.core_version||'-')}</strong></div>
+        </div>
+      </div>
+      <div class="card"><div class="resource-kvs">${kv('Role',n.role||'-')}${kv('Interface',n.internet_interface||'-')}${kv('Agent URL',n.agent_url||'-')}${kv('Last seen',fmtDate(m.last_seen))}${kv('Failures',m.failure_count||0)}${kv('Last error',m.last_error||'-')}</div></div>`, 'NODE TELEMETRY');
   }
 
   async function openInboundEdit(id) {
@@ -1606,7 +1738,7 @@
   }
 
   async function confirmDelete(message) {
-    return window.confirm(message);
+    return confirmAction(message, 'تأیید حذف');
   }
 
   document.addEventListener('click', async event => {
@@ -1629,6 +1761,9 @@
         case 'logout': return logout();
         case 'toggle-sidebar': return $('#sidebar').classList.toggle('open');
         case 'close-modal': return closeModal();
+        case 'confirm-cancel': return settleConfirm(false);
+        case 'confirm-accept': return settleConfirm(true);
+        case 'toggle-live': return toggleLiveRefresh();
         case 'refresh-page': return navigate(state.page);
         case 'new-current': return openCreate(state.page);
 
@@ -1757,6 +1892,9 @@
     const next = location.hash.replace(/^#\/?/, '');
     if (next && next !== state.page) navigate(next);
   });
+
+  window.addEventListener('beforeunload', stopLiveRefresh);
+  document.addEventListener('visibilitychange', updateLiveControl);
 
   bootstrap();
 })();
