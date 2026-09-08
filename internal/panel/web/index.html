@@ -1,5 +1,155 @@
-<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GameBridge</title><link rel="stylesheet" href="/styles.css"></head><body>
-<div id="toast"></div>
-<section id="auth-screen" class="auth-screen"><div class="auth-card"><div class="brand big"><span class="brand-mark">G</span><div><b>GameBridge</b><small>Gaming Network Control Plane</small></div></div><div id="setup-box" class="hidden"><h1>راه‌اندازی اولیه</h1><p>حساب Owner را بساز.</p><input id="setup-user" placeholder="نام کاربری" value="admin"><input id="setup-pass" type="password" placeholder="رمز عبور حداقل ۱۰ کاراکتر"><button class="primary wide" onclick="setupOwner()">ساخت Owner</button></div><div id="login-box" class="hidden"><h1>ورود به پنل</h1><input id="login-user" placeholder="نام کاربری"><input id="login-pass" type="password" placeholder="رمز عبور"><input id="login-totp" placeholder="کد 2FA (اختیاری)"><button class="primary wide" onclick="login()">ورود</button></div></div></section>
-<div id="app" class="app hidden"><aside class="sidebar"><div class="brand"><span class="brand-mark">G</span><div><b>GameBridge</b><small id="role-label">Control Plane</small></div></div><nav id="nav"><button data-page="dashboard" class="active">◈ داشبورد</button><button data-page="users">♟ کاربران</button><button data-page="plans">▤ پلن‌ها</button><button data-page="inbounds">⇢ Inbounds</button><button data-page="outbounds">Outbounds</button><button data-page="routing">Routing</button><button data-page="online">Online Users</button><button data-page="traffic">Traffic</button><button data-page="nodes">◉ نودها</button><button data-page="tunnels">⇄ GameBridge Tunnels</button><button data-page="forwards">↪ پورت فوروارد</button><button data-page="logs">≡ لاگ‌ها</button><button data-page="audit">⌁ Audit</button><button data-page="admins">♜ ادمین‌ها</button><button data-page="settings">⚙ تنظیمات</button></nav><div class="sidebar-footer"><span id="current-user"></span><button onclick="logout()">خروج</button></div></aside><main><header><div><h2 id="page-title">داشبورد</h2><p id="page-subtitle">وضعیت شبکه GameBridge</p></div><div class="header-actions"><button onclick="syncTraffic()">Sync Traffic</button><button class="primary" id="page-action">+ جدید</button></div></header><div id="content"></div></main></div>
-<div id="modal" class="modal hidden"><div class="modal-card"><button class="close" onclick="closeModal()">×</button><h2 id="modal-title"></h2><div id="modal-body"></div></div></div><script src="/app.js"></script><script src="/phase2.js"></script><script src="/phase3.js"></script></body></html>
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>GameBridge Control Center</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <section id="auth-screen" class="auth-screen">
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <div class="logo-mark">GB</div>
+        <div>
+          <h1>GameBridge</h1>
+          <p>Gaming Network Control Center</p>
+        </div>
+      </div>
+
+      <div id="setup-card" class="auth-card hidden">
+        <span class="eyebrow">FIRST RUN</span>
+        <h2>راه‌اندازی کنترل‌سنتر</h2>
+        <p class="muted">حساب Owner اولیه را ایجاد کنید.</p>
+        <label class="field">
+          <span>نام کاربری</span>
+          <input id="setup-user" autocomplete="username" value="admin">
+        </label>
+        <label class="field">
+          <span>رمز عبور</span>
+          <input id="setup-pass" type="password" autocomplete="new-password" placeholder="حداقل 10 کاراکتر">
+        </label>
+        <button class="btn primary wide" data-action="setup-owner">ساخت Owner</button>
+      </div>
+
+      <div id="login-card" class="auth-card hidden">
+        <span class="eyebrow">CONTROL PLANE</span>
+        <h2>ورود به GameBridge</h2>
+        <p class="muted">مدیریت نودها، مسیرها و سرویس‌های خروجی.</p>
+        <label class="field">
+          <span>نام کاربری</span>
+          <input id="login-user" autocomplete="username">
+        </label>
+        <label class="field">
+          <span>رمز عبور</span>
+          <input id="login-pass" type="password" autocomplete="current-password">
+        </label>
+        <label class="field">
+          <span>کد 2FA</span>
+          <input id="login-totp" inputmode="numeric" autocomplete="one-time-code" placeholder="اختیاری">
+        </label>
+        <button class="btn primary wide" data-action="login">ورود</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="app" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-mark small">GB</div>
+        <div>
+          <strong>GameBridge</strong>
+          <small id="role-label">Control Center</small>
+        </div>
+      </div>
+
+      <nav id="nav" class="nav">
+        <div class="nav-section">
+          <span class="nav-label">Overview</span>
+          <button class="nav-item active" data-page="dashboard"><span>◈</span>داشبورد</button>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Control Plane</span>
+          <button class="nav-item" data-page="users"><span>◎</span>کاربران</button>
+          <button class="nav-item" data-page="plans"><span>▤</span>پلن‌ها</button>
+          <button class="nav-item" data-page="nodes"><span>◉</span>نودها</button>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Network</span>
+          <button class="nav-item" data-page="inbounds"><span>⇢</span>Inbounds</button>
+          <button class="nav-item" data-page="outbounds"><span>⇠</span>Outbounds</button>
+          <button class="nav-item" data-page="groups"><span>⌘</span>Failover Groups</button>
+          <button class="nav-item" data-page="routing"><span>⌁</span>Routing</button>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Operations</span>
+          <button class="nav-item" data-page="online"><span>●</span>Online Users</button>
+          <button class="nav-item" data-page="traffic"><span>↕</span>Traffic</button>
+          <button class="nav-item" data-page="tunnels"><span>⇄</span>Tunnels</button>
+          <button class="nav-item" data-page="forwards"><span>↪</span>Port Forward</button>
+          <button class="nav-item" data-page="logs"><span>≡</span>Logs</button>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Governance</span>
+          <button class="nav-item" data-page="audit"><span>◇</span>Audit</button>
+          <button class="nav-item" data-page="admins"><span>♜</span>Admins</button>
+          <button class="nav-item" data-page="settings"><span>⚙</span>Settings</button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-pill">
+          <span class="avatar" id="user-avatar">A</span>
+          <div>
+            <strong id="current-user">admin</strong>
+            <small id="current-role">owner</small>
+          </div>
+        </div>
+        <button class="icon-btn" data-action="logout" title="Logout">↪</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" data-action="toggle-sidebar" aria-label="Menu">☰</button>
+        <div>
+          <div class="breadcrumbs"><span>GameBridge</span><span>/</span><span id="breadcrumb-page">Dashboard</span></div>
+          <h2 id="page-title">داشبورد</h2>
+          <p id="page-subtitle">وضعیت لحظه‌ای Control Plane</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn ghost" data-action="refresh-page">↻ Refresh</button>
+          <button id="page-action" class="btn primary hidden" data-action="new-current">+ جدید</button>
+        </div>
+      </header>
+
+      <section id="content" class="content">
+        <div class="skeleton-card"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop" data-action="close-modal"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <span id="modal-eyebrow" class="eyebrow">GAMEBRIDGE</span>
+          <h3 id="modal-title">Modal</h3>
+        </div>
+        <button class="icon-btn" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
