@@ -1,0 +1,82 @@
+name: Container
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "cmd/gamebridge-panel/**"
+      - "internal/panel/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/docker.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "cmd/gamebridge-panel/**"
+      - "internal/panel/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/docker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke:
+    name: Docker Build & Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build panel image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: gamebridge-panel:ci
+          build-args: |
+            VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start panel container
+        run: |
+          set -euo pipefail
+          docker volume create gamebridge-ci-data >/dev/null
+          docker run -d \
+            --name gamebridge-panel-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --security-opt no-new-privileges \
+            --cap-drop ALL \
+            -p 127.0.0.1:18088:8088 \
+            -v gamebridge-ci-data:/data \
+            gamebridge-panel:ci >/dev/null
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:18088/healthz >/dev/null; then
+              curl -fsS http://127.0.0.1:18088/api/setup/status
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs gamebridge-panel-ci
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f gamebridge-panel-ci >/dev/null 2>&1 || true
+          docker volume rm gamebridge-ci-data >/dev/null 2>&1 || true
