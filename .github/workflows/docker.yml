@@ -47,6 +47,8 @@ jobs:
           tags: gamebridge-panel:ci
           build-args: |
             VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.run_started_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,6 +76,7 @@ jobs:
           for i in $(seq 1 45); do
             if curl -fsS http://127.0.0.1:18088/healthz >/dev/null; then
               curl -fsS http://127.0.0.1:18088/api/setup/status
+              curl -fsS http://127.0.0.1:18088/api/release/info
               exit 0
             fi
             sleep 2

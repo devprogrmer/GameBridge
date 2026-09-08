@@ -79,6 +79,7 @@ func (s *Server) ListenAndServe() error {
 }
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
+	s.mux.HandleFunc("/api/release/info", s.handleReleaseInfo)
 	s.registerAuthRoutes()
 	s.registerDashboardRoutes()
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
