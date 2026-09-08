@@ -11,7 +11,10 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 
 RUN go build \
-    -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+    -ldflags "\
+    -X github.com/devprogrmer/GameBridge/internal/panel.version=${VERSION} \
+    -X github.com/devprogrmer/GameBridge/internal/panel.commit=${COMMIT} \
+    -X github.com/devprogrmer/GameBridge/internal/panel.buildTime=${BUILD_TIME}" \
     -o gamebridge ./cmd/gamebridge-panel
 
 
