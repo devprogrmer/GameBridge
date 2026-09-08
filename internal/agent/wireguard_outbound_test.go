@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,5 +54,33 @@ func TestNormalizeWGOutboundSpecRejectsLongInterface(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected interface validation error")
+	}
+}
+func TestSafeWGPathComponentRejectsTraversal(t *testing.T) {
+	bad := []string{"../wg0", "wg0/../../evil", ".", "..", "/tmp/wg0"}
+	for _, iface := range bad {
+		if _, err := safeWGPathComponent(iface); err == nil {
+			t.Fatalf("expected interface %q to be rejected", iface)
+		}
+	}
+}
+
+func TestWireGuardPathHelpersUseSafeBasename(t *testing.T) {
+	cfg, err := wgConfigPath("gbw-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCfg := filepath.Join("/etc/wireguard", "gbw-test.conf")
+	if cfg != wantCfg {
+		t.Fatalf("unexpected config path %q; want %q", cfg, wantCfg)
+	}
+
+	marker, err := managedWGMarker("gbw-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantMarker := filepath.Join(managedWGOutboundDir, "gbw-test.json")
+	if marker != wantMarker {
+		t.Fatalf("unexpected marker path %q; want %q", marker, wantMarker)
 	}
 }

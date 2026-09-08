@@ -83,12 +83,29 @@ func renderWGOutboundConfig(x WGOutboundSpec) string {
 	return b.String()
 }
 
-func managedWGMarker(iface string) string {
-	return filepath.Join(managedWGOutboundDir, iface+".json")
+func safeWGPathComponent(iface string) (string, error) {
+	iface = strings.TrimSpace(iface)
+	base := filepath.Base(iface)
+	if base != iface || base == "." || base == ".." || !safeName.MatchString(base) || len(base) > 15 {
+		return "", errors.New("invalid WireGuard outbound interface")
+	}
+	return base, nil
 }
 
-func wgConfigPath(iface string) string {
-	return filepath.Join("/etc/wireguard", iface+".conf")
+func managedWGMarker(iface string) (string, error) {
+	safeIface, err := safeWGPathComponent(iface)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(managedWGOutboundDir, safeIface+".json"), nil
+}
+
+func wgConfigPath(iface string) (string, error) {
+	safeIface, err := safeWGPathComponent(iface)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("/etc/wireguard", safeIface+".conf"), nil
 }
 
 func applyManagedWGOutbound(x WGOutboundSpec) error {
@@ -104,8 +121,14 @@ func applyManagedWGOutbound(x WGOutboundSpec) error {
 		return err
 	}
 
-	cfgPath := wgConfigPath(x.Interface)
-	marker := managedWGMarker(x.Interface)
+	cfgPath, err := wgConfigPath(x.Interface)
+	if err != nil {
+		return err
+	}
+	marker, err := managedWGMarker(x.Interface)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(cfgPath); err == nil {
 		if _, markerErr := os.Stat(marker); markerErr != nil {
 			return fmt.Errorf("wireguard interface %s already has an unmanaged config", x.Interface)
@@ -135,10 +158,22 @@ func applyManagedWGOutbound(x WGOutboundSpec) error {
 }
 
 func removeManagedWGOutbound(iface string) {
-	unit := "wg-quick@" + iface + ".service"
+	safeIface, err := safeWGPathComponent(iface)
+	if err != nil {
+		return
+	}
+	cfgPath, err := wgConfigPath(safeIface)
+	if err != nil {
+		return
+	}
+	marker, err := managedWGMarker(safeIface)
+	if err != nil {
+		return
+	}
+	unit := "wg-quick@" + safeIface + ".service"
 	_ = run("systemctl", "disable", "--now", unit)
-	_ = os.Remove(wgConfigPath(iface))
-	_ = os.Remove(managedWGMarker(iface))
+	_ = os.Remove(cfgPath)
+	_ = os.Remove(marker)
 }
 
 func syncManagedWGOutbounds(specs []WGOutboundSpec) error {
