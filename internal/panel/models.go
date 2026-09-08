@@ -184,6 +184,7 @@ type Outbound struct {
 	OpenVPNInterface       string    `json:"openvpn_interface"`
 	OpenVPNRoutingTable    int       `json:"openvpn_routing_table"`
 	OpenVPNMark            int       `json:"openvpn_mark"`
+	CustomXrayProtocol     string    `json:"custom_xray_protocol,omitempty"`
 	Enabled                bool      `json:"enabled"`
 	Remark                 string    `json:"remark"`
 	CreatedAt              time.Time `json:"created_at"`
