@@ -4,6 +4,7 @@ package panel
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"sort"
@@ -12,31 +13,46 @@ import (
 )
 
 var xrayTagPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,40}$`)
+var wireGuardInterfacePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
+
+func defaultWireGuardInterface(tag string) string {
+	name := "gbw-" + tag
+	if len(name) > 15 {
+		name = name[:15]
+	}
+	return name
+}
 
 type outboundInput struct {
-	Name              string `json:"name"`
-	NodeID            string `json:"node_id"`
-	Tag               string `json:"tag"`
-	Protocol          string `json:"protocol"`
-	Address           string `json:"address"`
-	Port              int    `json:"port"`
-	Username          string `json:"username"`
-	Password          string `json:"password"`
-	Secret            string `json:"secret"`
-	Transport         string `json:"transport"`
-	TLSMode           string `json:"tls_mode"`
-	Path              string `json:"path"`
-	Host              string `json:"host"`
-	ServiceName       string `json:"service_name"`
-	ServerName        string `json:"server_name"`
-	AllowInsecure     bool   `json:"allow_insecure"`
-	Fingerprint       string `json:"fingerprint"`
-	Flow              string `json:"flow"`
-	ShadowsocksMethod string `json:"shadowsocks_method"`
-	RealityPublicKey  string `json:"reality_public_key"`
-	RealityShortID    string `json:"reality_short_id"`
-	Enabled           bool   `json:"enabled"`
-	Remark            string `json:"remark"`
+	Name                   string   `json:"name"`
+	NodeID                 string   `json:"node_id"`
+	Tag                    string   `json:"tag"`
+	Protocol               string   `json:"protocol"`
+	Address                string   `json:"address"`
+	Port                   int      `json:"port"`
+	Username               string   `json:"username"`
+	Password               string   `json:"password"`
+	Secret                 string   `json:"secret"`
+	Transport              string   `json:"transport"`
+	TLSMode                string   `json:"tls_mode"`
+	Path                   string   `json:"path"`
+	Host                   string   `json:"host"`
+	ServiceName            string   `json:"service_name"`
+	ServerName             string   `json:"server_name"`
+	AllowInsecure          bool     `json:"allow_insecure"`
+	Fingerprint            string   `json:"fingerprint"`
+	Flow                   string   `json:"flow"`
+	ShadowsocksMethod      string   `json:"shadowsocks_method"`
+	RealityPublicKey       string   `json:"reality_public_key"`
+	RealityShortID         string   `json:"reality_short_id"`
+	WireGuardInterface     string   `json:"wireguard_interface"`
+	WireGuardAddress       string   `json:"wireguard_address"`
+	WireGuardPeerPublicKey string   `json:"wireguard_peer_public_key"`
+	WireGuardAllowedIPs    []string `json:"wireguard_allowed_ips"`
+	WireGuardKeepalive     int      `json:"wireguard_keepalive"`
+	WireGuardMTU           int      `json:"wireguard_mtu"`
+	Enabled                bool     `json:"enabled"`
+	Remark                 string   `json:"remark"`
 }
 
 func outboundInputSecret(in outboundInput) string {
@@ -48,7 +64,7 @@ func outboundInputSecret(in outboundInput) string {
 
 func outboundProtocolNeedsSecret(protocol string) bool {
 	switch protocol {
-	case "vless", "vmess", "trojan", "shadowsocks":
+	case "vless", "vmess", "trojan", "shadowsocks", "wireguard":
 		return true
 	default:
 		return false
@@ -75,6 +91,12 @@ func normalizeOutboundInput(in *outboundInput) error {
 	in.ShadowsocksMethod = strings.ToLower(strings.TrimSpace(in.ShadowsocksMethod))
 	in.RealityPublicKey = strings.TrimSpace(in.RealityPublicKey)
 	in.RealityShortID = strings.TrimSpace(in.RealityShortID)
+	in.WireGuardInterface = strings.TrimSpace(in.WireGuardInterface)
+	in.WireGuardAddress = strings.TrimSpace(in.WireGuardAddress)
+	in.WireGuardPeerPublicKey = strings.TrimSpace(in.WireGuardPeerPublicKey)
+	for i := range in.WireGuardAllowedIPs {
+		in.WireGuardAllowedIPs[i] = strings.TrimSpace(in.WireGuardAllowedIPs[i])
+	}
 	in.Remark = strings.TrimSpace(in.Remark)
 
 	if in.Name == "" || in.NodeID == "" {
@@ -173,6 +195,56 @@ func normalizeOutboundInput(in *outboundInput) error {
 		in.ShadowsocksMethod = ""
 		return nil
 
+	case "wireguard":
+		if in.Address == "" || in.Port < 1 || in.Port > 65535 {
+			return errors.New("wireguard outbound requires endpoint address and valid port")
+		}
+		if in.WireGuardInterface == "" {
+			in.WireGuardInterface = defaultWireGuardInterface(in.Tag)
+		}
+		if !wireGuardInterfacePattern.MatchString(in.WireGuardInterface) {
+			return errors.New("wireguard_interface must be 1-15 safe interface characters")
+		}
+		if _, _, err := net.ParseCIDR(in.WireGuardAddress); err != nil {
+			return errors.New("wireguard_address must be a valid CIDR")
+		}
+		if in.WireGuardPeerPublicKey == "" {
+			return errors.New("wireguard_peer_public_key is required")
+		}
+		if len(in.WireGuardAllowedIPs) == 0 {
+			in.WireGuardAllowedIPs = []string{"0.0.0.0/0", "::/0"}
+		}
+		for _, cidr := range in.WireGuardAllowedIPs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				return fmt.Errorf("invalid wireguard_allowed_ips entry %q", cidr)
+			}
+		}
+		if in.WireGuardKeepalive == 0 {
+			in.WireGuardKeepalive = 25
+		}
+		if in.WireGuardKeepalive < 0 || in.WireGuardKeepalive > 65535 {
+			return errors.New("wireguard_keepalive must be between 0 and 65535")
+		}
+		if in.WireGuardMTU == 0 {
+			in.WireGuardMTU = 1420
+		}
+		if in.WireGuardMTU < 576 || in.WireGuardMTU > 9000 {
+			return errors.New("wireguard_mtu must be between 576 and 9000")
+		}
+		in.Username = ""
+		in.Transport = ""
+		in.TLSMode = ""
+		in.Path = ""
+		in.Host = ""
+		in.ServiceName = ""
+		in.ServerName = ""
+		in.AllowInsecure = false
+		in.Fingerprint = ""
+		in.Flow = ""
+		in.ShadowsocksMethod = ""
+		in.RealityPublicKey = ""
+		in.RealityShortID = ""
+		return nil
 	case "shadowsocks":
 		if in.Address == "" || in.Port < 1 || in.Port > 65535 {
 			return errors.New("shadowsocks outbound requires address and valid port")
@@ -530,6 +602,17 @@ func (s *Server) buildXrayOutbounds(st State, nodeID string) ([]any, error) {
 				item["streamSettings"] = stream
 			}
 
+		case "wireguard":
+			if secret == "" {
+				return nil, fmt.Errorf("outbound %s requires a WireGuard private key", x.Tag)
+			}
+			item["protocol"] = "freedom"
+			item["settings"] = map[string]any{"domainStrategy": "AsIs"}
+			item["streamSettings"] = map[string]any{
+				"sockopt": map[string]any{
+					"interface": x.WireGuardInterface,
+				},
+			}
 		case "shadowsocks":
 			if secret == "" {
 				return nil, fmt.Errorf("outbound %s requires a Shadowsocks password", x.Tag)
