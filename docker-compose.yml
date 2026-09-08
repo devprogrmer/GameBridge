@@ -6,20 +6,37 @@ services:
     container_name: gamebridge-panel
     restart: unless-stopped
     init: true
+
     ports:
       - "${GAMEBRIDGE_PANEL_BIND:-0.0.0.0}:${GAMEBRIDGE_PANEL_PORT:-8088}:8088"
+
     environment:
+      GAMEBRIDGE_PANEL_LISTEN: 0.0.0.0:8088
+      GAMEBRIDGE_PANEL_STATE: /data/panel-state.json
       GAMEBRIDGE_COOKIE_SECURE: "${GAMEBRIDGE_COOKIE_SECURE:-0}"
+
     volumes:
       - gamebridge-data:/data
+
     read_only: true
+
     tmpfs:
       - /tmp:size=16m,mode=1777
+      - /etc/gamebridge:size=16m,mode=1777
+
     security_opt:
       - no-new-privileges:true
+
     cap_drop:
       - ALL
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8088/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
 volumes:
   gamebridge-data:
     name: gamebridge-data
+
