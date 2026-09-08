@@ -59,11 +59,25 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 func (s *Server) Handler() http.Handler { return securityHeaders(s.mux) }
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	jsonWrite(w, http.StatusOK, map[string]string{"status": "ok"})
+}
 func (s *Server) ListenAndServe() error {
 	log.Printf("GameBridge Panel listening on %s", s.cfg.Listen)
 	return http.ListenAndServe(s.cfg.Listen, s.Handler())
 }
 func (s *Server) routes() {
+	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
 	s.mux.HandleFunc("/api/setup", s.handleSetup)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
