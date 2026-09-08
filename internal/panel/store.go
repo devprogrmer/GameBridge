@@ -61,6 +61,7 @@ type diskState struct {
 	Inbounds       []diskInbound       `json:"inbounds"`
 	InboundClients []diskInboundClient `json:"inbound_clients"`
 	Outbounds      []diskOutbound      `json:"outbounds"`
+	OutboundGroups []OutboundGroup     `json:"outbound_groups"`
 	RoutingRules   []RoutingRule       `json:"routing_rules"`
 	Forwards       []PortForward       `json:"forwards"`
 	VPNPeers       []diskVPNPeer       `json:"vpn_peers"`
@@ -70,14 +71,15 @@ type diskState struct {
 
 func stateToDisk(st State) diskState {
 	d := diskState{
-		Schema:       st.Schema,
-		Plans:        append([]Plan(nil), st.Plans...),
-		Users:        append([]User(nil), st.Users...),
-		Tunnels:      append([]Tunnel(nil), st.Tunnels...),
-		RoutingRules: append([]RoutingRule(nil), st.RoutingRules...),
-		Forwards:     append([]PortForward(nil), st.Forwards...),
-		Audit:        append([]AuditEntry(nil), st.Audit...),
-		Settings:     map[string]string{},
+		Schema:         st.Schema,
+		Plans:          append([]Plan(nil), st.Plans...),
+		Users:          append([]User(nil), st.Users...),
+		Tunnels:        append([]Tunnel(nil), st.Tunnels...),
+		OutboundGroups: append([]OutboundGroup(nil), st.OutboundGroups...),
+		RoutingRules:   append([]RoutingRule(nil), st.RoutingRules...),
+		Forwards:       append([]PortForward(nil), st.Forwards...),
+		Audit:          append([]AuditEntry(nil), st.Audit...),
+		Settings:       map[string]string{},
 	}
 	for k, v := range st.Settings {
 		d.Settings[k] = v
@@ -109,14 +111,15 @@ func stateToDisk(st State) diskState {
 
 func diskToState(d diskState) State {
 	st := State{
-		Schema:       d.Schema,
-		Plans:        append([]Plan(nil), d.Plans...),
-		Users:        append([]User(nil), d.Users...),
-		Tunnels:      append([]Tunnel(nil), d.Tunnels...),
-		RoutingRules: append([]RoutingRule(nil), d.RoutingRules...),
-		Forwards:     append([]PortForward(nil), d.Forwards...),
-		Audit:        append([]AuditEntry(nil), d.Audit...),
-		Settings:     map[string]string{},
+		Schema:         d.Schema,
+		Plans:          append([]Plan(nil), d.Plans...),
+		Users:          append([]User(nil), d.Users...),
+		Tunnels:        append([]Tunnel(nil), d.Tunnels...),
+		OutboundGroups: append([]OutboundGroup(nil), d.OutboundGroups...),
+		RoutingRules:   append([]RoutingRule(nil), d.RoutingRules...),
+		Forwards:       append([]PortForward(nil), d.Forwards...),
+		Audit:          append([]AuditEntry(nil), d.Audit...),
+		Settings:       map[string]string{},
 	}
 	for k, v := range d.Settings {
 		st.Settings[k] = v

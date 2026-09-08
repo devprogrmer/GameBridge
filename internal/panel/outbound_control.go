@@ -124,6 +124,9 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		if err := validateOutboundTargetSpec(st, id, in.Name, in.NodeID, in.Tag); err != nil {
 			return err
 		}
+		if err := validateOutboundGroupReferencesForChange(st, id, in.NodeID, in.Enabled); err != nil {
+			return err
+		}
 		before = cloneOutboundValue(*x)
 		oldNodeID = x.NodeID
 		newNodeID = in.NodeID
@@ -221,6 +224,9 @@ func setOutboundEnabledTransactional(store *Store, id string, enabled bool, depl
 					return errors.New("outbound is used by an enabled routing rule")
 				}
 			}
+			if err := validateOutboundGroupReferencesForChange(st, id, x.NodeID, false); err != nil {
+				return err
+			}
 		}
 		before = x.Enabled
 		nodeID = x.NodeID
@@ -271,6 +277,9 @@ func deleteOutboundTransactional(store *Store, id string, deploy func(string) er
 			if rr.OutboundID == id {
 				return errors.New("outbound is used by a routing rule")
 			}
+		}
+		if err := validateOutboundGroupReferencesForChange(st, id, x.NodeID, false); err != nil {
+			return err
 		}
 		before = *x
 		nodeID = x.NodeID

@@ -198,22 +198,42 @@ type Outbound struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
+type OutboundGroupMember struct {
+	OutboundID string `json:"outbound_id"`
+	Priority   int    `json:"priority"`
+	Weight     int    `json:"weight"`
+}
+
+type OutboundGroup struct {
+	ID                 string                `json:"id"`
+	Name               string                `json:"name"`
+	NodeID             string                `json:"node_id"`
+	Strategy           string                `json:"strategy"`
+	Members            []OutboundGroupMember `json:"members"`
+	FallbackOutboundID string                `json:"fallback_outbound_id"`
+	Expected           int                   `json:"expected"`
+	Enabled            bool                  `json:"enabled"`
+	CreatedAt          time.Time             `json:"created_at"`
+	UpdatedAt          time.Time             `json:"updated_at"`
+}
+
 type RoutingRule struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	NodeID     string    `json:"node_id"`
-	Priority   int       `json:"priority"`
-	Enabled    bool      `json:"enabled"`
-	InboundIDs []string  `json:"inbound_ids"`
-	UserIDs    []string  `json:"user_ids"`
-	Domains    []string  `json:"domains"`
-	IPs        []string  `json:"ips"`
-	Ports      string    `json:"ports"`
-	Network    string    `json:"network"`
-	Protocols  []string  `json:"protocols"`
-	OutboundID string    `json:"outbound_id"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	NodeID          string    `json:"node_id"`
+	Priority        int       `json:"priority"`
+	Enabled         bool      `json:"enabled"`
+	InboundIDs      []string  `json:"inbound_ids"`
+	UserIDs         []string  `json:"user_ids"`
+	Domains         []string  `json:"domains"`
+	IPs             []string  `json:"ips"`
+	Ports           string    `json:"ports"`
+	Network         string    `json:"network"`
+	Protocols       []string  `json:"protocols"`
+	OutboundID      string    `json:"outbound_id,omitempty"`
+	OutboundGroupID string    `json:"outbound_group_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type PortForward struct {
@@ -267,6 +287,7 @@ type State struct {
 	Inbounds       []Inbound         `json:"inbounds"`
 	InboundClients []InboundClient   `json:"inbound_clients"`
 	Outbounds      []Outbound        `json:"outbounds"`
+	OutboundGroups []OutboundGroup   `json:"outbound_groups"`
 	RoutingRules   []RoutingRule     `json:"routing_rules"`
 	Forwards       []PortForward     `json:"forwards"`
 	VPNPeers       []VPNPeer         `json:"vpn_peers"`
