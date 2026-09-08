@@ -51,7 +51,7 @@ func normalizeTorOutboundSpec(x TorOutboundSpec) (TorOutboundSpec, error) {
 		return x, err
 	}
 	if x.SocksPort < 1024 || x.SocksPort > 65535 {
-		return x, errors.New("Tor SOCKS port must be between 1024 and 65535")
+		return x, errors.New("tor SOCKS port must be between 1024 and 65535")
 	}
 	return x, nil
 }
@@ -203,7 +203,7 @@ func applyManagedTorOutbound(x TorOutboundSpec) error {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	return fmt.Errorf("Tor outbound %s did not open SOCKS port %d", x.Name, x.SocksPort)
+	return fmt.Errorf("tor outbound %s did not open SOCKS port %d", x.Name, x.SocksPort)
 }
 
 func removeManagedTorOutbound(name string) {
