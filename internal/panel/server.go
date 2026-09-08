@@ -996,10 +996,8 @@ func (s *Server) handleNodeItem(w http.ResponseWriter, r *http.Request, rest str
 				if findNode(st, id) == nil {
 					return errors.New("node not found")
 				}
-				for _, t := range st.Tunnels {
-					if t.SourceNodeID == id || t.DestinationNodeID == id {
-						return errors.New("node has attached tunnels")
-					}
+				if err := validateNodeDeleteReferences(st, id); err != nil {
+					return err
 				}
 				st.Nodes = deleteByID(st.Nodes, id, func(x Node) string { return x.ID })
 				return nil

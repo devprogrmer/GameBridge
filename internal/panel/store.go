@@ -192,17 +192,23 @@ func (s *Store) Read(fn func(State) error) error {
 func (s *Store) Update(fn func(*State) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := fn(&s.st); err != nil {
+
+	next := cloneState(s.st)
+	if err := fn(&next); err != nil {
 		return err
 	}
-	return s.saveLocked()
+	if err := s.saveStateLocked(next); err != nil {
+		return err
+	}
+	s.st = next
+	return nil
 }
 
-func (s *Store) saveLocked() error {
+func (s *Store) saveStateLocked(st State) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(stateToDisk(s.st), "", "  ")
+	b, err := json.MarshalIndent(stateToDisk(st), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -219,6 +225,9 @@ func cloneState(st State) State {
 	out.Plans = append([]Plan(nil), st.Plans...)
 	out.Users = append([]User(nil), st.Users...)
 	out.Nodes = append([]Node(nil), st.Nodes...)
+	for i := range out.Nodes {
+		out.Nodes[i].Tags = append([]string(nil), st.Nodes[i].Tags...)
+	}
 	out.Tunnels = append([]Tunnel(nil), st.Tunnels...)
 	for i := range out.Tunnels {
 		out.Tunnels[i].Ports = append([]int(nil), st.Tunnels[i].Ports...)
@@ -230,6 +239,13 @@ func cloneState(st State) State {
 	}
 	out.InboundClients = append([]InboundClient(nil), st.InboundClients...)
 	out.Outbounds = append([]Outbound(nil), st.Outbounds...)
+	for i := range out.Outbounds {
+		out.Outbounds[i].WireGuardAllowedIPs = append([]string(nil), st.Outbounds[i].WireGuardAllowedIPs...)
+	}
+	out.OutboundGroups = append([]OutboundGroup(nil), st.OutboundGroups...)
+	for i := range out.OutboundGroups {
+		out.OutboundGroups[i].Members = append([]OutboundGroupMember(nil), st.OutboundGroups[i].Members...)
+	}
 	out.RoutingRules = append([]RoutingRule(nil), st.RoutingRules...)
 	for i := range out.RoutingRules {
 		out.RoutingRules[i].InboundIDs = append([]string(nil), st.RoutingRules[i].InboundIDs...)

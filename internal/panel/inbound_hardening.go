@@ -133,6 +133,9 @@ func updateInboundTransactional(store *Store, id string, in inboundCreate, deplo
 		if err := validateInboundTargetSpec(st, id, in.Name, in.NodeID, in.Listen, in.Port); err != nil {
 			return err
 		}
+		if err := validateInboundReferenceChange(st, id, in.NodeID, in.Enabled, false); err != nil {
+			return err
+		}
 		before = cloneInboundValue(*x)
 		oldNodeID = x.NodeID
 		newNodeID = in.NodeID
