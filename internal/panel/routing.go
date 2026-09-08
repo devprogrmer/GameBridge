@@ -426,8 +426,12 @@ func normalizeRoutingRule(in *RoutingRule) error {
 	in.Ports = strings.TrimSpace(in.Ports)
 	in.Network = strings.ToLower(strings.TrimSpace(in.Network))
 	in.OutboundID = strings.TrimSpace(in.OutboundID)
-	if in.Name == "" || in.NodeID == "" || in.OutboundID == "" {
-		return errors.New("name, node_id and outbound_id are required")
+	in.OutboundGroupID = strings.TrimSpace(in.OutboundGroupID)
+	if in.Name == "" || in.NodeID == "" {
+		return errors.New("name and node_id are required")
+	}
+	if (in.OutboundID == "") == (in.OutboundGroupID == "") {
+		return errors.New("exactly one of outbound_id or outbound_group_id is required")
 	}
 	if in.Network != "" && in.Network != "tcp" && in.Network != "udp" && in.Network != "tcp,udp" {
 		return errors.New("network must be tcp, udp or tcp,udp")
@@ -594,7 +598,12 @@ func validateRoutingReferences(st *State, r RoutingRule) error {
 	if findNode(st, r.NodeID) == nil {
 		return errors.New("node not found")
 	}
-	if r.OutboundID != "direct" && r.OutboundID != "blocked" {
+	if r.OutboundGroupID != "" {
+		group := findOutboundGroup(st, r.OutboundGroupID)
+		if group == nil || group.NodeID != r.NodeID || !group.Enabled {
+			return errors.New("outbound group not found or not enabled on selected node")
+		}
+	} else if r.OutboundID != "direct" && r.OutboundID != "blocked" {
 		out := findOutbound(st, r.OutboundID)
 		if out == nil || out.NodeID != r.NodeID || !out.Enabled {
 			return errors.New("outbound not found or not enabled on selected node")
@@ -818,6 +827,12 @@ func (s *Server) buildXrayOutbounds(st State, nodeID string) ([]any, error) {
 		}
 		out = append(out, item)
 	}
+
+	aliases, err := buildXrayBalancerAliases(st, nodeID, out)
+	if err != nil {
+		return nil, fmt.Errorf("build outbound balancer aliases: %w", err)
+	}
+	out = append(out, aliases...)
 	return out, nil
 }
 func buildXrayRouting(st State, nodeID string) map[string]any {
@@ -828,18 +843,26 @@ func buildXrayRouting(st State, nodeID string) map[string]any {
 		if r.NodeID != nodeID || !r.Enabled {
 			continue
 		}
-		target := r.OutboundID
-		if target != "direct" && target != "blocked" {
-			if x := findOutbound(&st, target); x != nil && x.Enabled {
-				target = x.Tag
-			} else {
+		rule := map[string]any{
+			"type":    "field",
+			"ruleTag": "gb-route-" + r.ID,
+		}
+		if r.OutboundGroupID != "" {
+			group := findOutboundGroup(&st, r.OutboundGroupID)
+			if group == nil || !group.Enabled || group.NodeID != nodeID {
 				continue
 			}
-		}
-		rule := map[string]any{
-			"type":        "field",
-			"outboundTag": target,
-			"ruleTag":     "gb-route-" + r.ID,
+			rule["balancerTag"] = outboundGroupBalancerTag(group.ID)
+		} else {
+			target := r.OutboundID
+			if target != "direct" && target != "blocked" {
+				if x := findOutbound(&st, target); x != nil && x.Enabled {
+					target = x.Tag
+				} else {
+					continue
+				}
+			}
+			rule["outboundTag"] = target
 		}
 		if len(r.InboundIDs) > 0 {
 			tags := make([]string, 0, len(r.InboundIDs))
@@ -876,5 +899,5 @@ func buildXrayRouting(st State, nodeID string) map[string]any {
 		}
 		out = append(out, rule)
 	}
-	return map[string]any{"domainStrategy": "AsIs", "rules": out}
+	return map[string]any{"domainStrategy": "AsIs", "rules": out, "balancers": buildXrayBalancers(st, nodeID)}
 }

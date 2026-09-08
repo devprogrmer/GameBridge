@@ -297,6 +297,10 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleOutboundsV2(w, r)
 	case strings.HasPrefix(p, "outbounds/"):
 		s.handleOutboundItemV2(w, r, strings.TrimPrefix(p, "outbounds/"))
+	case p == "outbound-groups":
+		s.handleOutboundGroups(w, r)
+	case strings.HasPrefix(p, "outbound-groups/"):
+		s.handleOutboundGroupItem(w, r, strings.TrimPrefix(p, "outbound-groups/"))
 	case p == "routing":
 		s.handleRoutingRules(w, r)
 	case strings.HasPrefix(p, "routing/"):

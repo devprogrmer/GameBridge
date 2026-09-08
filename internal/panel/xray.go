@@ -326,6 +326,15 @@ func (s *Server) buildXrayConfig(nodeID string) (map[string]any, Node, error) {
 		"routing":   routing,
 	}
 
+	if balancers, _ := routing["balancers"].([]any); len(balancers) > 0 {
+		cfg["observatory"] = map[string]any{
+			"subjectSelector":   []string{"gbm-"},
+			"probeUrl":          "https://connectivitycheck.gstatic.com/generate_204",
+			"probeInterval":     "30s",
+			"enableConcurrency": true,
+		}
+	}
+
 	return cfg, *node, nil
 }
 
