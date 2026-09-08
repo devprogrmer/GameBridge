@@ -4,6 +4,7 @@ package panel
 import "net/http"
 
 func (s *Server) registerAuthRoutes() {
+	_ = phase17DefaultPermissionCheck
 	s.mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		_ = recordSecurityEvent("auth_me_access")
 
