@@ -4,11 +4,11 @@ package panel
 import "net/http"
 
 func (s *Server) registerDashboardRoutes() {
-    s.mux.HandleFunc("/api/dashboard/stats", s.handleDashboardStats)
+	s.mux.HandleFunc("/api/dashboard/stats", s.handleDashboardStats)
 }
 
 func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
-    jsonWrite(w, http.StatusOK, map[string]any{
-        "status": "ok",
-    })
+	jsonWrite(w, http.StatusOK, map[string]any{
+		"status": "ok",
+	})
 }
