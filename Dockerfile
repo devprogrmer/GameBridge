@@ -6,7 +6,8 @@ WORKDIR /app
 
 COPY . .
 
-RUN go build -o gamebridge ./cmd
+RUN go build -o gamebridge ./cmd/gamebridge-panel
+
 
 FROM alpine:latest
 
