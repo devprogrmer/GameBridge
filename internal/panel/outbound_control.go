@@ -148,6 +148,12 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.ShadowsocksMethod = in.ShadowsocksMethod
 		x.RealityPublicKey = in.RealityPublicKey
 		x.RealityShortID = in.RealityShortID
+		x.WireGuardInterface = in.WireGuardInterface
+		x.WireGuardAddress = in.WireGuardAddress
+		x.WireGuardPeerPublicKey = in.WireGuardPeerPublicKey
+		x.WireGuardAllowedIPs = append([]string(nil), in.WireGuardAllowedIPs...)
+		x.WireGuardKeepalive = in.WireGuardKeepalive
+		x.WireGuardMTU = in.WireGuardMTU
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -379,33 +385,39 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		obj := Outbound{
-			ID:                randomHex(12),
-			Name:              in.Name,
-			NodeID:            in.NodeID,
-			Tag:               in.Tag,
-			Protocol:          in.Protocol,
-			Address:           in.Address,
-			Port:              in.Port,
-			Username:          in.Username,
-			PasswordEnc:       passwordEnc,
-			Transport:         in.Transport,
-			TLSMode:           in.TLSMode,
-			Path:              in.Path,
-			Host:              in.Host,
-			ServiceName:       in.ServiceName,
-			ServerName:        in.ServerName,
-			AllowInsecure:     in.AllowInsecure,
-			Fingerprint:       in.Fingerprint,
-			Flow:              in.Flow,
-			ShadowsocksMethod: in.ShadowsocksMethod,
-			RealityPublicKey:  in.RealityPublicKey,
-			RealityShortID:    in.RealityShortID,
-			Enabled:           true,
-			Remark:            in.Remark,
-			CreatedAt:         time.Now().UTC(),
-			UpdatedAt:         time.Now().UTC(),
+			ID:                     randomHex(12),
+			Name:                   in.Name,
+			NodeID:                 in.NodeID,
+			Tag:                    in.Tag,
+			Protocol:               in.Protocol,
+			Address:                in.Address,
+			Port:                   in.Port,
+			Username:               in.Username,
+			PasswordEnc:            passwordEnc,
+			Transport:              in.Transport,
+			TLSMode:                in.TLSMode,
+			Path:                   in.Path,
+			Host:                   in.Host,
+			ServiceName:            in.ServiceName,
+			ServerName:             in.ServerName,
+			AllowInsecure:          in.AllowInsecure,
+			Fingerprint:            in.Fingerprint,
+			Flow:                   in.Flow,
+			ShadowsocksMethod:      in.ShadowsocksMethod,
+			RealityPublicKey:       in.RealityPublicKey,
+			RealityShortID:         in.RealityShortID,
+			WireGuardInterface:     in.WireGuardInterface,
+			WireGuardAddress:       in.WireGuardAddress,
+			WireGuardPeerPublicKey: in.WireGuardPeerPublicKey,
+			WireGuardAllowedIPs:    append([]string(nil), in.WireGuardAllowedIPs...),
+			WireGuardKeepalive:     in.WireGuardKeepalive,
+			WireGuardMTU:           in.WireGuardMTU,
+			Enabled:                true,
+			Remark:                 in.Remark,
+			CreatedAt:              time.Now().UTC(),
+			UpdatedAt:              time.Now().UTC(),
 		}
-		if err := createOutboundTransactional(s.store, obj, s.deployXrayNode); err != nil {
+		if err := createOutboundTransactional(s.store, obj, s.deployOutboundNode); err != nil {
 			if isOutboundDeploymentError(err) {
 				jsonError(w, http.StatusBadGateway, err.Error())
 			} else {
@@ -454,7 +466,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 				jsonError(w, http.StatusForbidden, "forbidden")
 				return
 			}
-			err := setOutboundEnabledTransactional(s.store, id, action == "enable", s.deployXrayNode)
+			err := setOutboundEnabledTransactional(s.store, id, action == "enable", s.deployOutboundNode)
 			if err != nil {
 				if isOutboundDeploymentError(err) {
 					jsonError(w, http.StatusBadGateway, err.Error())
@@ -490,7 +502,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 				jsonError(w, http.StatusNotFound, err.Error())
 				return
 			}
-			if err := s.deployXrayNode(nodeID); err != nil {
+			if err := s.deployOutboundNode(nodeID); err != nil {
 				jsonError(w, http.StatusBadGateway, err.Error())
 				return
 			}
@@ -560,7 +572,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			return
 		}
 
-		if err := updateOutboundTransactional(s.store, id, in, passwordEnc, s.deployXrayNode); err != nil {
+		if err := updateOutboundTransactional(s.store, id, in, passwordEnc, s.deployOutboundNode); err != nil {
 			if isOutboundDeploymentError(err) {
 				jsonError(w, http.StatusBadGateway, err.Error())
 			} else if err.Error() == "outbound not found" {
@@ -578,7 +590,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			jsonError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		if err := deleteOutboundTransactional(s.store, id, s.deployXrayNode); err != nil {
+		if err := deleteOutboundTransactional(s.store, id, s.deployOutboundNode); err != nil {
 			if isOutboundDeploymentError(err) {
 				jsonError(w, http.StatusBadGateway, err.Error())
 			} else if err.Error() == "outbound not found" {
