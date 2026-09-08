@@ -45,6 +45,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/wireguard/peer", s.auth(s.handleWGPeer))
 	s.mux.HandleFunc("/v1/wireguard/stats", s.auth(s.handleWGStats))
 	s.mux.HandleFunc("/v1/wireguard/outbounds/sync", s.auth(s.handleWGOutboundSync))
+	s.mux.HandleFunc("/v1/tor/outbounds/sync", s.auth(s.handleTorOutboundSync))
+	s.mux.HandleFunc("/v1/tor/status", s.auth(s.handleTorStatus))
 }
 func (s *Server) auth(fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

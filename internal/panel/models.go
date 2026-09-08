@@ -180,6 +180,7 @@ type Outbound struct {
 	WireGuardAllowedIPs    []string  `json:"wireguard_allowed_ips"`
 	WireGuardKeepalive     int       `json:"wireguard_keepalive"`
 	WireGuardMTU           int       `json:"wireguard_mtu"`
+	TorSOCKSPort           int       `json:"tor_socks_port"`
 	Enabled                bool      `json:"enabled"`
 	Remark                 string    `json:"remark"`
 	CreatedAt              time.Time `json:"created_at"`

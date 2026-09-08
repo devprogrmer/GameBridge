@@ -154,6 +154,7 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.WireGuardAllowedIPs = append([]string(nil), in.WireGuardAllowedIPs...)
 		x.WireGuardKeepalive = in.WireGuardKeepalive
 		x.WireGuardMTU = in.WireGuardMTU
+		x.TorSOCKSPort = in.TorSOCKSPort
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -412,6 +413,7 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			WireGuardAllowedIPs:    append([]string(nil), in.WireGuardAllowedIPs...),
 			WireGuardKeepalive:     in.WireGuardKeepalive,
 			WireGuardMTU:           in.WireGuardMTU,
+			TorSOCKSPort:           in.TorSOCKSPort,
 			Enabled:                true,
 			Remark:                 in.Remark,
 			CreatedAt:              time.Now().UTC(),
