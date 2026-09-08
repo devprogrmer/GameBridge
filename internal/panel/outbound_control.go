@@ -155,6 +155,9 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.WireGuardKeepalive = in.WireGuardKeepalive
 		x.WireGuardMTU = in.WireGuardMTU
 		x.TorSOCKSPort = in.TorSOCKSPort
+		x.OpenVPNInterface = in.OpenVPNInterface
+		x.OpenVPNRoutingTable = in.OpenVPNRoutingTable
+		x.OpenVPNMark = in.OpenVPNMark
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -372,6 +375,18 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 		}
 
 		secret := outboundInputSecret(in)
+		if in.Protocol == "openvpn" {
+			if strings.TrimSpace(in.Secret) == "" {
+				jsonError(w, http.StatusBadRequest, "openvpn secret must contain the .ovpn profile")
+				return
+			}
+			packed, err := encodeOpenVPNCredential(in.Secret, in.Password)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			secret = packed
+		}
 		if outboundProtocolNeedsSecret(in.Protocol) && secret == "" {
 			jsonError(w, http.StatusBadRequest, "credential is required for selected outbound protocol")
 			return
@@ -414,6 +429,9 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			WireGuardKeepalive:     in.WireGuardKeepalive,
 			WireGuardMTU:           in.WireGuardMTU,
 			TorSOCKSPort:           in.TorSOCKSPort,
+			OpenVPNInterface:       in.OpenVPNInterface,
+			OpenVPNRoutingTable:    in.OpenVPNRoutingTable,
+			OpenVPNMark:            in.OpenVPNMark,
 			Enabled:                true,
 			Remark:                 in.Remark,
 			CreatedAt:              time.Now().UTC(),
@@ -549,12 +567,14 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 		}
 
 		var passwordEnc string
+		var oldProtocol string
 		err := s.store.Read(func(st State) error {
 			x := findOutbound(&st, id)
 			if x == nil {
 				return errors.New("outbound not found")
 			}
 			passwordEnc = x.PasswordEnc
+			oldProtocol = x.Protocol
 			return nil
 		})
 		if err != nil {
@@ -562,11 +582,53 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			return
 		}
 		secret := outboundInputSecret(in)
-		if secret != "" {
-			passwordEnc, err = s.crypt.Seal(secret)
+		if in.Protocol == "openvpn" {
+			profile := strings.TrimSpace(in.Secret)
+			authPassword := in.Password
+
+			if oldProtocol == "openvpn" && passwordEnc != "" {
+				plain, openErr := s.crypt.Open(passwordEnc)
+				if openErr != nil {
+					jsonError(w, http.StatusInternalServerError, openErr.Error())
+					return
+				}
+				existing, decodeErr := decodeOpenVPNCredential(plain)
+				if decodeErr != nil {
+					jsonError(w, http.StatusInternalServerError, decodeErr.Error())
+					return
+				}
+				if profile == "" {
+					profile = existing.Profile
+				}
+				if authPassword == "" {
+					authPassword = existing.Password
+				}
+			}
+
+			if profile == "" {
+				jsonError(w, http.StatusBadRequest, "openvpn secret must contain the .ovpn profile")
+				return
+			}
+			packed, packErr := encodeOpenVPNCredential(profile, authPassword)
+			if packErr != nil {
+				jsonError(w, http.StatusBadRequest, packErr.Error())
+				return
+			}
+			passwordEnc, err = s.crypt.Seal(packed)
 			if err != nil {
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
+			}
+		} else {
+			if oldProtocol != in.Protocol && secret == "" {
+				passwordEnc = ""
+			}
+			if secret != "" {
+				passwordEnc, err = s.crypt.Seal(secret)
+				if err != nil {
+					jsonError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
 			}
 		}
 		if outboundProtocolNeedsSecret(in.Protocol) && passwordEnc == "" {

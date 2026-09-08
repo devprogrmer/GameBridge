@@ -23,6 +23,22 @@ func defaultWireGuardInterface(tag string) string {
 	return name
 }
 
+func defaultOpenVPNInterface(tag string) string {
+	name := "gbv-" + tag
+	if len(name) > 15 {
+		name = name[:15]
+	}
+	return name
+}
+
+func defaultOpenVPNRoutingID(tag string) int {
+	h := 5381
+	for _, b := range []byte(tag) {
+		h = ((h << 5) + h + int(b)) % 50000
+	}
+	return 10000 + h
+}
+
 type outboundInput struct {
 	Name                   string   `json:"name"`
 	NodeID                 string   `json:"node_id"`
@@ -52,6 +68,9 @@ type outboundInput struct {
 	WireGuardKeepalive     int      `json:"wireguard_keepalive"`
 	WireGuardMTU           int      `json:"wireguard_mtu"`
 	TorSOCKSPort           int      `json:"tor_socks_port"`
+	OpenVPNInterface       string   `json:"openvpn_interface"`
+	OpenVPNRoutingTable    int      `json:"openvpn_routing_table"`
+	OpenVPNMark            int      `json:"openvpn_mark"`
 	Enabled                bool     `json:"enabled"`
 	Remark                 string   `json:"remark"`
 }
@@ -65,7 +84,7 @@ func outboundInputSecret(in outboundInput) string {
 
 func outboundProtocolNeedsSecret(protocol string) bool {
 	switch protocol {
-	case "vless", "vmess", "trojan", "shadowsocks", "wireguard":
+	case "vless", "vmess", "trojan", "shadowsocks", "wireguard", "openvpn":
 		return true
 	default:
 		return false
@@ -95,6 +114,7 @@ func normalizeOutboundInput(in *outboundInput) error {
 	in.WireGuardInterface = strings.TrimSpace(in.WireGuardInterface)
 	in.WireGuardAddress = strings.TrimSpace(in.WireGuardAddress)
 	in.WireGuardPeerPublicKey = strings.TrimSpace(in.WireGuardPeerPublicKey)
+	in.OpenVPNInterface = strings.TrimSpace(in.OpenVPNInterface)
 	for i := range in.WireGuardAllowedIPs {
 		in.WireGuardAllowedIPs[i] = strings.TrimSpace(in.WireGuardAllowedIPs[i])
 	}
@@ -278,6 +298,51 @@ func normalizeOutboundInput(in *outboundInput) error {
 		in.WireGuardAllowedIPs = nil
 		in.WireGuardKeepalive = 0
 		in.WireGuardMTU = 0
+		in.OpenVPNInterface = ""
+		in.OpenVPNRoutingTable = 0
+		in.OpenVPNMark = 0
+		return nil
+
+	case "openvpn":
+		if in.OpenVPNInterface == "" {
+			in.OpenVPNInterface = defaultOpenVPNInterface(in.Tag)
+		}
+		if !wireGuardInterfacePattern.MatchString(in.OpenVPNInterface) {
+			return errors.New("openvpn_interface must be 1-15 safe interface characters")
+		}
+		if in.OpenVPNRoutingTable == 0 {
+			in.OpenVPNRoutingTable = defaultOpenVPNRoutingID(in.Tag)
+		}
+		if in.OpenVPNMark == 0 {
+			in.OpenVPNMark = in.OpenVPNRoutingTable
+		}
+		if in.OpenVPNRoutingTable < 1000 || in.OpenVPNRoutingTable > 65000 {
+			return errors.New("openvpn_routing_table must be between 1000 and 65000")
+		}
+		if in.OpenVPNMark < 1000 || in.OpenVPNMark > 65000 {
+			return errors.New("openvpn_mark must be between 1000 and 65000")
+		}
+		in.Address = ""
+		in.Port = 0
+		in.Transport = ""
+		in.TLSMode = ""
+		in.Path = ""
+		in.Host = ""
+		in.ServiceName = ""
+		in.ServerName = ""
+		in.AllowInsecure = false
+		in.Fingerprint = ""
+		in.Flow = ""
+		in.ShadowsocksMethod = ""
+		in.RealityPublicKey = ""
+		in.RealityShortID = ""
+		in.WireGuardInterface = ""
+		in.WireGuardAddress = ""
+		in.WireGuardPeerPublicKey = ""
+		in.WireGuardAllowedIPs = nil
+		in.WireGuardKeepalive = 0
+		in.WireGuardMTU = 0
+		in.TorSOCKSPort = 0
 		return nil
 
 	case "shadowsocks":
@@ -306,7 +371,7 @@ func normalizeOutboundInput(in *outboundInput) error {
 		return nil
 
 	default:
-		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan, shadowsocks, wireguard or tor")
+		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan, shadowsocks, wireguard, tor or openvpn")
 	}
 }
 func normalizeRoutingRule(in *RoutingRule) error {
@@ -657,6 +722,22 @@ func (s *Server) buildXrayOutbounds(st State, nodeID string) ([]any, error) {
 			item["settings"] = map[string]any{
 				"address": "127.0.0.1",
 				"port":    x.TorSOCKSPort,
+			}
+
+		case "openvpn":
+			if secret == "" {
+				return nil, fmt.Errorf("outbound %s requires an openvpn profile", x.Tag)
+			}
+			if x.OpenVPNInterface == "" || x.OpenVPNMark < 1000 {
+				return nil, fmt.Errorf("outbound %s has invalid openvpn routing settings", x.Tag)
+			}
+			item["protocol"] = "freedom"
+			item["settings"] = map[string]any{"domainStrategy": "AsIs"}
+			item["streamSettings"] = map[string]any{
+				"sockopt": map[string]any{
+					"interface": x.OpenVPNInterface,
+					"mark":      x.OpenVPNMark,
+				},
 			}
 
 		case "shadowsocks":

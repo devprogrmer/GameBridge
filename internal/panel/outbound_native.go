@@ -2,9 +2,11 @@
 package panel
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type nativeWireGuardSpec struct {
@@ -103,11 +105,119 @@ func (s *Server) syncTorOutbounds(nodeID string) error {
 	return nil
 }
 
+type openVPNCredential struct {
+	Profile  string `json:"profile"`
+	Password string `json:"password,omitempty"`
+}
+
+func encodeOpenVPNCredential(profile, password string) (string, error) {
+	profile = strings.TrimSpace(profile)
+	if profile == "" {
+		return "", errors.New("openvpn profile is required")
+	}
+	b, err := json.Marshal(openVPNCredential{Profile: profile, Password: password})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func decodeOpenVPNCredential(raw string) (openVPNCredential, error) {
+	var out openVPNCredential
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return out, fmt.Errorf("decode openvpn credential: %w", err)
+	}
+	out.Profile = strings.TrimSpace(out.Profile)
+	if out.Profile == "" {
+		return out, errors.New("openvpn credential has an empty profile")
+	}
+	return out, nil
+}
+
+type nativeOpenVPNSpec struct {
+	Name         string `json:"name"`
+	Interface    string `json:"interface"`
+	RoutingTable int    `json:"routing_table"`
+	Mark         int    `json:"mark"`
+	Profile      string `json:"profile"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+}
+
+func (s *Server) desiredOpenVPNOutbounds(nodeID string) (Node, []nativeOpenVPNSpec, error) {
+	var node Node
+	var specs []nativeOpenVPNSpec
+	err := s.store.Read(func(st State) error {
+		n := findNode(&st, nodeID)
+		if n == nil {
+			return errors.New("node not found")
+		}
+		node = *n
+
+		seenInterfaces := map[string]bool{}
+		seenTables := map[int]bool{}
+		seenMarks := map[int]bool{}
+
+		for _, out := range st.Outbounds {
+			if out.NodeID != nodeID || !out.Enabled || out.Protocol != "openvpn" {
+				continue
+			}
+			if seenInterfaces[out.OpenVPNInterface] {
+				return fmt.Errorf("duplicate openvpn interface %s on node", out.OpenVPNInterface)
+			}
+			if seenTables[out.OpenVPNRoutingTable] {
+				return fmt.Errorf("duplicate openvpn routing table %d on node", out.OpenVPNRoutingTable)
+			}
+			if seenMarks[out.OpenVPNMark] {
+				return fmt.Errorf("duplicate openvpn mark %d on node", out.OpenVPNMark)
+			}
+			seenInterfaces[out.OpenVPNInterface] = true
+			seenTables[out.OpenVPNRoutingTable] = true
+			seenMarks[out.OpenVPNMark] = true
+
+			plain, err := s.crypt.Open(out.PasswordEnc)
+			if err != nil {
+				return fmt.Errorf("decrypt openvpn outbound %s profile: %w", out.Tag, err)
+			}
+			cred, err := decodeOpenVPNCredential(plain)
+			if err != nil {
+				return fmt.Errorf("openvpn outbound %s credential: %w", out.Tag, err)
+			}
+			specs = append(specs, nativeOpenVPNSpec{
+				Name:         out.Tag,
+				Interface:    out.OpenVPNInterface,
+				RoutingTable: out.OpenVPNRoutingTable,
+				Mark:         out.OpenVPNMark,
+				Profile:      cred.Profile,
+				Username:     out.Username,
+				Password:     cred.Password,
+			})
+		}
+		return nil
+	})
+	return node, specs, err
+}
+
+func (s *Server) syncOpenVPNOutbounds(nodeID string) error {
+	node, specs, err := s.desiredOpenVPNOutbounds(nodeID)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{"outbounds": specs}
+	if err := s.agentJSON(node, http.MethodPost, "/v1/openvpn/outbounds/sync", payload, nil); err != nil {
+		return fmt.Errorf("sync native openvpn outbounds: %w", err)
+	}
+	return nil
+}
+
 func (s *Server) deployOutboundNode(nodeID string) error {
 	if err := s.syncWireGuardOutbounds(nodeID); err != nil {
 		return err
 	}
 	if err := s.syncTorOutbounds(nodeID); err != nil {
+		return err
+	}
+	if err := s.syncOpenVPNOutbounds(nodeID); err != nil {
 		return err
 	}
 	if err := s.deployXrayNode(nodeID); err != nil {

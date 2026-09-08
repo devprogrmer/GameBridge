@@ -47,6 +47,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/wireguard/outbounds/sync", s.auth(s.handleWGOutboundSync))
 	s.mux.HandleFunc("/v1/tor/outbounds/sync", s.auth(s.handleTorOutboundSync))
 	s.mux.HandleFunc("/v1/tor/status", s.auth(s.handleTorStatus))
+	s.mux.HandleFunc("/v1/openvpn/outbounds/sync", s.auth(s.handleOpenVPNOutboundSync))
+	s.mux.HandleFunc("/v1/openvpn/status", s.auth(s.handleOpenVPNStatus))
 }
 func (s *Server) auth(fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
