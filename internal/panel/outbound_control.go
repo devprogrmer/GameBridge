@@ -158,6 +158,7 @@ func updateOutboundTransactional(store *Store, id string, in outboundInput, pass
 		x.OpenVPNInterface = in.OpenVPNInterface
 		x.OpenVPNRoutingTable = in.OpenVPNRoutingTable
 		x.OpenVPNMark = in.OpenVPNMark
+		x.CustomXrayProtocol = in.CustomXrayProtocol
 		x.Enabled = in.Enabled
 		x.Remark = in.Remark
 		x.UpdatedAt = time.Now().UTC()
@@ -387,6 +388,10 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			}
 			secret = packed
 		}
+		if in.Protocol == "custom" && strings.TrimSpace(in.Secret) == "" {
+			jsonError(w, http.StatusBadRequest, "custom xray secret must contain the outbound JSON config")
+			return
+		}
 		if outboundProtocolNeedsSecret(in.Protocol) && secret == "" {
 			jsonError(w, http.StatusBadRequest, "credential is required for selected outbound protocol")
 			return
@@ -432,6 +437,7 @@ func (s *Server) handleOutboundsV2(w http.ResponseWriter, r *http.Request) {
 			OpenVPNInterface:       in.OpenVPNInterface,
 			OpenVPNRoutingTable:    in.OpenVPNRoutingTable,
 			OpenVPNMark:            in.OpenVPNMark,
+			CustomXrayProtocol:     in.CustomXrayProtocol,
 			Enabled:                true,
 			Remark:                 in.Remark,
 			CreatedAt:              time.Now().UTC(),
@@ -568,6 +574,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 
 		var passwordEnc string
 		var oldProtocol string
+		var oldCustomXrayProtocol string
 		err := s.store.Read(func(st State) error {
 			x := findOutbound(&st, id)
 			if x == nil {
@@ -575,6 +582,7 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			}
 			passwordEnc = x.PasswordEnc
 			oldProtocol = x.Protocol
+			oldCustomXrayProtocol = x.CustomXrayProtocol
 			return nil
 		})
 		if err != nil {
@@ -618,6 +626,20 @@ func (s *Server) handleOutboundItemV2(w http.ResponseWriter, r *http.Request, re
 			if err != nil {
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
+			}
+		} else if in.Protocol == "custom" {
+			if secret == "" {
+				if oldProtocol != "custom" || passwordEnc == "" {
+					jsonError(w, http.StatusBadRequest, "custom xray secret must contain the outbound JSON config")
+					return
+				}
+				in.CustomXrayProtocol = oldCustomXrayProtocol
+			} else {
+				passwordEnc, err = s.crypt.Seal(secret)
+				if err != nil {
+					jsonError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
 			}
 		} else {
 			if oldProtocol != in.Protocol && secret == "" {

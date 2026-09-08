@@ -71,6 +71,7 @@ type outboundInput struct {
 	OpenVPNInterface       string   `json:"openvpn_interface"`
 	OpenVPNRoutingTable    int      `json:"openvpn_routing_table"`
 	OpenVPNMark            int      `json:"openvpn_mark"`
+	CustomXrayProtocol     string   `json:"custom_xray_protocol"`
 	Enabled                bool     `json:"enabled"`
 	Remark                 string   `json:"remark"`
 }
@@ -84,7 +85,7 @@ func outboundInputSecret(in outboundInput) string {
 
 func outboundProtocolNeedsSecret(protocol string) bool {
 	switch protocol {
-	case "vless", "vmess", "trojan", "shadowsocks", "wireguard", "openvpn":
+	case "vless", "vmess", "trojan", "shadowsocks", "wireguard", "openvpn", "custom":
 		return true
 	default:
 		return false
@@ -115,6 +116,10 @@ func normalizeOutboundInput(in *outboundInput) error {
 	in.WireGuardAddress = strings.TrimSpace(in.WireGuardAddress)
 	in.WireGuardPeerPublicKey = strings.TrimSpace(in.WireGuardPeerPublicKey)
 	in.OpenVPNInterface = strings.TrimSpace(in.OpenVPNInterface)
+	in.CustomXrayProtocol = strings.TrimSpace(in.CustomXrayProtocol)
+	if in.Protocol != "custom" {
+		in.CustomXrayProtocol = ""
+	}
 	for i := range in.WireGuardAllowedIPs {
 		in.WireGuardAllowedIPs[i] = strings.TrimSpace(in.WireGuardAllowedIPs[i])
 	}
@@ -345,6 +350,47 @@ func normalizeOutboundInput(in *outboundInput) error {
 		in.TorSOCKSPort = 0
 		return nil
 
+	case "custom":
+		if in.Password != "" {
+			return errors.New("custom xray config must be supplied in secret, not password")
+		}
+		in.Username = ""
+		if in.Secret != "" {
+			_, protocol, canonical, err := decodeCustomXrayConfig(in.Secret)
+			if err != nil {
+				return err
+			}
+			in.Secret = canonical
+			in.CustomXrayProtocol = protocol
+		} else {
+			in.CustomXrayProtocol = ""
+		}
+		in.Address = ""
+		in.Port = 0
+		in.Transport = ""
+		in.TLSMode = ""
+		in.Path = ""
+		in.Host = ""
+		in.ServiceName = ""
+		in.ServerName = ""
+		in.AllowInsecure = false
+		in.Fingerprint = ""
+		in.Flow = ""
+		in.ShadowsocksMethod = ""
+		in.RealityPublicKey = ""
+		in.RealityShortID = ""
+		in.WireGuardInterface = ""
+		in.WireGuardAddress = ""
+		in.WireGuardPeerPublicKey = ""
+		in.WireGuardAllowedIPs = nil
+		in.WireGuardKeepalive = 0
+		in.WireGuardMTU = 0
+		in.TorSOCKSPort = 0
+		in.OpenVPNInterface = ""
+		in.OpenVPNRoutingTable = 0
+		in.OpenVPNMark = 0
+		return nil
+
 	case "shadowsocks":
 		if in.Address == "" || in.Port < 1 || in.Port > 65535 {
 			return errors.New("shadowsocks outbound requires address and valid port")
@@ -371,7 +417,7 @@ func normalizeOutboundInput(in *outboundInput) error {
 		return nil
 
 	default:
-		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan, shadowsocks, wireguard, tor or openvpn")
+		return errors.New("protocol must be freedom, blackhole, socks, http, vless, vmess, trojan, shadowsocks, wireguard, tor, openvpn or custom")
 	}
 }
 func normalizeRoutingRule(in *RoutingRule) error {
@@ -739,6 +785,19 @@ func (s *Server) buildXrayOutbounds(st State, nodeID string) ([]any, error) {
 					"mark":      x.OpenVPNMark,
 				},
 			}
+
+		case "custom":
+			if secret == "" {
+				return nil, fmt.Errorf("outbound %s requires a custom xray config", x.Tag)
+			}
+			customItem, protocol, err := customXrayOutboundItem(x.Tag, secret)
+			if err != nil {
+				return nil, fmt.Errorf("outbound %s custom xray config: %w", x.Tag, err)
+			}
+			if x.CustomXrayProtocol != "" && x.CustomXrayProtocol != protocol {
+				return nil, fmt.Errorf("outbound %s custom protocol metadata mismatch", x.Tag)
+			}
+			item = customItem
 
 		case "shadowsocks":
 			if secret == "" {
