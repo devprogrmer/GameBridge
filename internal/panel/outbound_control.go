@@ -33,6 +33,12 @@ func validateOutboundTargetSpec(st *State, outboundID, name, nodeID, tag string)
 
 	name = strings.TrimSpace(name)
 	tag = strings.TrimSpace(tag)
+	lowerTag := strings.ToLower(tag)
+	for _, prefix := range []string{"gbm-", "gb-bal-"} {
+		if strings.HasPrefix(lowerTag, prefix) {
+			return fmt.Errorf("outbound tag prefix %q is reserved for GameBridge internal routing", prefix)
+		}
+	}
 	for _, x := range st.Outbounds {
 		if x.ID == outboundID {
 			continue
