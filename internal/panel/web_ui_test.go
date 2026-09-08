@@ -19,9 +19,10 @@ func TestControlCenterIsCSPFriendly(t *testing.T) {
 			"onsubmit=",
 			"onload=",
 			"javascript:",
+			"style=",
 		} {
 			if strings.Contains(lower, forbidden) {
-				t.Fatalf("%s contains CSP-incompatible inline handler %q", name, forbidden)
+				t.Fatalf("%s contains CSP-incompatible inline content %q", name, forbidden)
 			}
 		}
 	}
@@ -76,8 +77,8 @@ func TestProfessionalUXBranding(t *testing.T) {
 	styles := string(styleBytes)
 
 	for _, needle := range []string{
-		`class="gb-logo large"`,
-		`class="gb-logo small"`,
+		`class="brand-logo large"`,
+		`class="brand-logo small"`,
 		`id="global-search"`,
 		`class="env-chip"`,
 	} {
@@ -91,7 +92,7 @@ func TestProfessionalUXBranding(t *testing.T) {
 		".failover-flow",
 		".route-card",
 		".audit-timeline",
-		".gb-logo",
+		".brand-logo",
 	} {
 		if !strings.Contains(styles, needle) {
 			t.Fatalf("professional stylesheet missing %q", needle)
@@ -126,6 +127,84 @@ func TestProfessionalUXHasDedicatedOperationalPages(t *testing.T) {
 	for _, needle := range required {
 		if !strings.Contains(app, needle) {
 			t.Fatalf("professional UX missing %q", needle)
+		}
+	}
+}
+
+func TestFinalPolishHasFirstPartyBrandAsset(t *testing.T) {
+	indexBytes, err := webFS.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	brandBytes, err := webFS.ReadFile("web/brand.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexBytes)
+	brand := strings.ToLower(string(brandBytes))
+
+	if !strings.Contains(index, `rel="icon" type="image/svg+xml" href="/brand.svg"`) {
+		t.Fatal("GameBridge brand asset is not configured as favicon")
+	}
+	if !strings.Contains(index, `src="/brand.svg" alt="GameBridge"`) {
+		t.Fatal("GameBridge brand asset is not used by the application shell")
+	}
+	if !strings.Contains(brand, "<svg") || strings.Contains(brand, "<script") {
+		t.Fatal("brand.svg must be a script-free SVG")
+	}
+}
+
+func TestFinalPolishHasLiveTelemetryChartsAndSafeConfirmation(t *testing.T) {
+	appBytes, err := webFS.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleBytes, err := webFS.ReadFile("web/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexBytes, err := webFS.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := string(appBytes)
+	styles := string(styleBytes)
+	index := string(indexBytes)
+
+	for _, needle := range []string{
+		"donutChart",
+		"trafficChart",
+		"fleetChart",
+		"progressMeter",
+		"startLiveRefresh",
+		"toggleLiveRefresh",
+		"confirmAction",
+		"livePages",
+		"NODE TELEMETRY",
+		"OUTBOUND TELEMETRY",
+		"USER TELEMETRY",
+	} {
+		if !strings.Contains(app, needle) {
+			t.Fatalf("final product polish missing %q", needle)
+		}
+	}
+	if strings.Contains(app, "window.confirm(") {
+		t.Fatal("native browser confirm is still used")
+	}
+	if !strings.Contains(index, `id="live-toggle"`) {
+		t.Fatal("live telemetry control is missing from the topbar")
+	}
+	for _, needle := range []string{
+		".donut-chart",
+		".traffic-chart",
+		".live-toggle",
+		".confirm-panel",
+		".usage-progress",
+		".node-detail-grid",
+	} {
+		if !strings.Contains(styles, needle) {
+			t.Fatalf("final polish stylesheet missing %q", needle)
 		}
 	}
 }

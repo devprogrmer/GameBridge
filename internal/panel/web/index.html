@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#081019">
   <title>GameBridge Control Center</title>
+  <link rel="icon" type="image/svg+xml" href="/brand.svg">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -13,7 +15,7 @@
   <section id="auth-screen" class="auth-screen">
     <div class="auth-shell">
       <div class="auth-brand">
-        <div class="gb-logo large" aria-label="GameBridge"><span>G</span><i></i></div>
+        <img class="brand-logo large" src="/brand.svg" alt="GameBridge">
         <div>
           <h1>GameBridge</h1>
           <p>Gaming Network Control Center</p>
@@ -59,7 +61,7 @@
   <div id="app" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-brand">
-        <div class="gb-logo small" aria-label="GameBridge"><span>G</span><i></i></div>
+        <img class="brand-logo small" src="/brand.svg" alt="GameBridge">
         <div>
           <strong>GameBridge</strong>
           <small id="role-label">Control Center</small>
@@ -131,6 +133,7 @@
             <kbd>/</kbd>
           </label>
           <span class="env-chip"><i></i> Control Plane</span>
+          <button id="live-toggle" class="live-toggle active" data-action="toggle-live" aria-pressed="true"><span></span> LIVE · 15s</button>
           <button class="btn ghost" data-action="refresh-page">↻ Refresh</button>
           <button id="page-action" class="btn primary hidden" data-action="new-current">+ جدید</button>
         </div>
